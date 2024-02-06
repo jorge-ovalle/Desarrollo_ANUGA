@@ -7,14 +7,39 @@ from procesamiento_archivos import asc_to_df
 from topografia import Topografia
 from time import time
 import anuga
+import psutil
 
 def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
                                area_base: float) -> np.array:
+    '''
+    Calcula la velocidad inicial de un fluido en una canaleta
+
+    Args:
+        caudal (float): Caudal del fluido (en m^3/s)
+        angulo_polar (float): Ángulo polar de la velocidad (en radianes)
+        area_base (float): Área de la base de la region de la canaleta (en m^2)
+    
+    Returns:
+        np.array: Velocidad inicial del fluido (en m/s)
+    
+    '''
     # rapidez = 2 * caudal / (np.pi * radio_canaleta**2)
     rapidez = caudal / area_base
     return rapidez * np.array([np.sin(angulo_polar), np.cos(angulo_polar)])
 
 def ecuacion_de_la_recta(x1: float, y1: float, x2: float, y2: float) -> Tuple[float, float, float]:
+    '''
+    Calcula la ecuación de la recta que pasa por los puntos (x1, y1) y (x2, y2)
+
+    Args:
+        x1 (float): Coordenada x del primer punto
+        y1 (float): Coordenada y del primer punto
+        x2 (float): Coordenada x del segundo punto
+        y2 (float): Coordenada y del segundo punto
+    
+    Returns:
+        Tuple[float, float, float]: Coeficientes de la ecuación de la recta de la forma ax + by + c = 0
+    '''
     if x1 == x2:
         a = 1
         b = 0
@@ -29,7 +54,7 @@ def ecuacion_de_la_recta(x1: float, y1: float, x2: float, y2: float) -> Tuple[fl
 class Estado:
 
     def __init__(self, dominio: anuga.Domain,
-                 region: anuga.Polygon, bordes_a_traquear: List[int]):
+                 region: List, bordes_a_traquear: List[int]):
         self.domain = dominio
         self._df_estado = pd.DataFrame(columns=['tiempo_sim', 'tiempo_inicio_paso',
                                                 'elapsed', 'distancias_borde'])
@@ -43,6 +68,12 @@ class Estado:
             self.planos_borde[idx] = ecuacion_de_la_recta(x1, y1, x2, y2)
 
     def calcular_distancias_borde(self) -> Dict[int, float]:
+        '''
+        Calcula la distancia mínima del volumen de agua a cada borde
+
+        Returns:
+            Dict[int, float]: Distancia mínima del volumen de agua a cada borde (en metros)
+        '''
 
         # Obtenemos las coordenadas de los centroides que tienen agua
         centroids = self.domain.centroid_coordinates
@@ -63,6 +94,17 @@ class Estado:
         return distancias 
     
     def actualizar(self, tiempo_sim: float, tiempo_inicio_paso: float, elapsed: float) -> List[int]:
+        '''
+        Actualiza el estado del dominio
+
+        Args:
+            tiempo_sim (float): Tiempo de simulación (s)
+            tiempo_inicio_paso (float): Tiempo de inicio del paso (s)
+            elapsed (float): Tiempo transcurrido desde el inicio del paso (s)
+        
+        Returns:
+            List[int]: Lista con los índices de los bordes que se deben extender.
+        '''
 
         # Calculamos las distancias asociadas 
         distancias_borde = self.calcular_distancias_borde()
@@ -71,7 +113,7 @@ class Estado:
         # Verificamos si el volumen de agua está muy cerca de algún borde
         bordes_a_extender = []
         for idx, dist in distancias_borde.items():
-            if dist < p.distancia_minima_borde:
+            if dist < p.DISTANCIA_MINIMA_BORDE:
                 bordes_a_extender.append(idx)
         
         return bordes_a_extender
@@ -87,8 +129,8 @@ class Simulador(ABC):
 class AnugaSW(Simulador):
 
     def __init__(self, ruta_topografia: str, ruta_mascara_tranque: str,
-                 ruta_region: str, ruta_interior: str, G: float=2.7,
-                 c_p: float=0.499, gamma_d: float=1.6, manning: float=0.025,
+                 ruta_region: str, ruta_interior: str, ruta_extension_region: str,
+                 G: float=2.7, c_p: float=0.499, gamma_d: float=1.6, manning: float=0.025,
                  res_region: float=100,
                  res_interior: float=50):
         
@@ -113,12 +155,19 @@ class AnugaSW(Simulador):
         self.topografia.dem[mascara_tranque.isna()] = np.nan 
 
         # Creamos una variable tiempo
-        self.tiempo_actual = 0
-        self.tiempo_base = 0
+        self.tiempo_modelo = 0
+        self.tiempo_base_modelo = 0
+        self.tiempo_ejecucion = 0
 
         # Cargado de polígonos
         self.region = anuga.read_polygon(ruta_region)
         self.interior = anuga.read_polygon(ruta_interior)
+
+        # Extension de regiones cuando el agua esté muy cerca
+        # de los bordes
+        self.extension_region = pd.read_csv(ruta_extension_region)
+
+        bordes_a_traquear = self.extension_region.indice_segmento.unique()
 
         # Creamos el dominio
         self.crear_dominio()
@@ -126,7 +175,7 @@ class AnugaSW(Simulador):
         ########################################
         ############## CREAR ESTADOS ###########
         ########################################
-        self.estado = Estado()
+        self.estado = Estado(self.domain, self.region, bordes_a_traquear)
     
     def crear_dominio(self, nombre_archivo_salida: str='relaves',
                       carpeta_figuras: str='figuras') -> None:
@@ -210,8 +259,10 @@ class AnugaSW(Simulador):
 
         canaletas_activadas = True
 
+        t_ejecucion = time()
         for t in self.domain.evolve(yieldstep=yieldstep, duration=self.tiempo_canaletas + tiempo_extra):
-            self.dplotter.save_depth_frame(vmin=0, vmax=2.5)
+
+            self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=p.MAX_PLOT_DEPTH)
 
             # Modificamos el caudal de las canaletas para
             # el periodo I_t = [t, t + yieldstep] si es que tiempo_canaletas \in I_t
@@ -225,8 +276,22 @@ class AnugaSW(Simulador):
                 self.modificar_caudal(0)
                 canaletas_activadas = False
             
-            # Guardamos el tiempo
-            self.tiempo_actual = self.tiempo_base + t
+            # Actualizamos tiempos de ejecucion
+            new_t_ejecucion = time()
+            elapsed = new_t_ejecucion - t_ejecucion
+            
+            # Guardamos el tiempo del MODELO
+            self.tiempo_modelo = self.tiempo_base_modelo + t
 
             # Guardamos datos en el estado
-            ######### PENDIENTE ##########
+            self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion, elapsed)
+
+            # Actualizamos el tiempo de ejecución
+            t_ejecucion = new_t_ejecucion
+            self.tiempo_ejecucion += elapsed
+        
+    def resetear_dominio(self):
+        self.domain = None
+        self.dplotter = None
+        self.crear_dominio()
+        self.estado = Estado(self.domain, self.region, self.extension_region.indice_segmento.unique())
