@@ -14,10 +14,69 @@ def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
     rapidez = caudal / area_base
     return rapidez * np.array([np.sin(angulo_polar), np.cos(angulo_polar)])
 
+def ecuacion_de_la_recta(x1: float, y1: float, x2: float, y2: float) -> Tuple[float, float, float]:
+    if x1 == x2:
+        a = 1
+        b = 0
+        c = -x1
+    else:
+        m = (y2 - y1) / (x2 - x1)
+        a = m
+        b = -1
+        c = y1 - m * x1
+    return a, b, c
+
 class Estado:
 
-    def __init__(self):
-        pass
+    def __init__(self, dominio: anuga.Domain,
+                 region: anuga.Polygon, bordes_a_traquear: List[int]):
+        self.domain = dominio
+        self._df_estado = pd.DataFrame(columns=['tiempo_sim', 'tiempo_inicio_paso',
+                                                'elapsed', 'distancias_borde'])
+        
+        # Obtenemos la ecuación de cada plano borde
+        self.planos_borde = {}
+        for idx in bordes_a_traquear:
+            idx1, idx2 = idx, (idx + 1) % len(region)
+            x1, y1 = region[idx1]
+            x2, y2 = region[idx2]
+            self.planos_borde[idx] = ecuacion_de_la_recta(x1, y1, x2, y2)
+
+    def calcular_distancias_borde(self) -> Dict[int, float]:
+
+        # Obtenemos las coordenadas de los centroides que tienen agua
+        centroids = self.domain.centroid_coordinates
+        wet_indices = self.domain.get_wet_elements()
+        wet_centroids = centroids[wet_indices]
+
+        # Calculamos la distancia mínima del volumen de agua a cada borde
+        distancias = {}
+        for idx, plano in self.planos_borde.items():
+            if wet_centroids.shape[0] != 0:
+                a, b, c = plano
+                distancias[idx] = np.abs(a * wet_centroids[:, 0] + b * wet_centroids[:, 1] + c) / np.sqrt(a**2 + b**2)
+                distancias[idx] = distancias[idx].min()
+            else:
+                # en caso de que no haya agua
+                distancias[idx] = np.inf
+
+        return distancias 
+    
+    def actualizar(self, tiempo_sim: float, tiempo_inicio_paso: float, elapsed: float) -> List[int]:
+
+        # Calculamos las distancias asociadas 
+        distancias_borde = self.calcular_distancias_borde()
+        self._df_estado.append([tiempo_sim, tiempo_inicio_paso, elapsed, distancias_borde], ignore_index=True)
+
+        # Verificamos si el volumen de agua está muy cerca de algún borde
+        bordes_a_extender = []
+        for idx, dist in distancias_borde.items():
+            if dist < p.distancia_minima_borde:
+                bordes_a_extender.append(idx)
+        
+        return bordes_a_extender
+
+
 
 class Simulador(ABC):
 
@@ -67,7 +126,7 @@ class AnugaSW(Simulador):
         ########################################
         ############## CREAR ESTADOS ###########
         ########################################
-        self.estados = []
+        self.estado = Estado()
     
     def crear_dominio(self, nombre_archivo_salida: str='relaves',
                       carpeta_figuras: str='figuras') -> None:
