@@ -55,17 +55,14 @@ class Estado:
 
     def __init__(self, dominio: anuga.Domain,
                  region: List, bordes_a_traquear: List[int]):
-        self.domain = dominio
         self._df_estado = pd.DataFrame(columns=['tiempo_sim', 'tiempo_inicio_paso',
-                                                'elapsed', 'distancias_borde'])
+                                                'elapsed'])
         
         # Obtenemos la ecuación de cada plano borde
-        self.planos_borde = {}
-        for idx in bordes_a_traquear:
-            idx1, idx2 = idx, (idx + 1) % len(region)
-            x1, y1 = region[idx1]
-            x2, y2 = region[idx2]
-            self.planos_borde[idx] = ecuacion_de_la_recta(x1, y1, x2, y2)
+        self.setear_planos_borde(region, bordes_a_traquear)
+
+        # Guardamos el dominio
+        self.domain = dominio
 
     def calcular_distancias_borde(self) -> Dict[int, float]:
         '''
@@ -91,7 +88,16 @@ class Estado:
                 # en caso de que no haya agua
                 distancias[idx] = np.inf
 
-        return distancias 
+        return distancias
+    
+    def setear_planos_borde(self, region: List, bordes_a_traquear: List[int]) -> None:
+         # Obtenemos la ecuación de cada plano borde
+        self.planos_borde = {}
+        for idx in bordes_a_traquear:
+            idx1, idx2 = idx, (idx + 1) % len(region)
+            x1, y1 = region[idx1]
+            x2, y2 = region[idx2]
+            self.planos_borde[idx] = ecuacion_de_la_recta(x1, y1, x2, y2)
     
     def actualizar(self, tiempo_sim: float, tiempo_inicio_paso: float, elapsed: float) -> List[int]:
         '''
@@ -103,20 +109,46 @@ class Estado:
             elapsed (float): Tiempo transcurrido desde el inicio del paso (s)
         
         Returns:
-            List[int]: Lista con los índices de los bordes que se deben extender.
+            List[int]: Lista con los índices de los bordes que se deben extender. 
+            Lista vacía si es que no hay bordes a extender o si no es necesario extender
         '''
 
-        # Calculamos las distancias asociadas 
-        distancias_borde = self.calcular_distancias_borde()
-        self._df_estado.append([tiempo_sim, tiempo_inicio_paso, elapsed, distancias_borde], ignore_index=True)
+        # Guardamos el estado
+        self._df_estado.append([tiempo_sim, tiempo_inicio_paso, elapsed], ignore_index=True)
 
         # Verificamos si el volumen de agua está muy cerca de algún borde
         bordes_a_extender = []
-        for idx, dist in distancias_borde.items():
-            if dist < p.DISTANCIA_MINIMA_BORDE:
-                bordes_a_extender.append(idx)
+
+        if len(self.planos_borde) > 0:
+            # Calculamos las distancias asociadas 
+            distancias_borde = self.calcular_distancias_borde()
+
+            for idx, dist in distancias_borde.items():
+                if dist < p.DISTANCIA_MINIMA_BORDE:
+                    bordes_a_extender.append(idx)
         
         return bordes_a_extender
+    
+    def resetear_dominio(self, dominio: anuga.Domain,
+                         region: List, bordes_a_traquear: List[int]) -> None:
+        '''
+        Resetea el dominio
+
+        Args:
+            region (List): Región del dominio
+            bordes_a_traquear (List[int]): Bordes a traquear
+        '''
+
+        # Eliminamos los planos
+        for idx in self.planos_borde:
+            del self.planos_borde[idx]
+
+        # Seteamos los nuevos planos
+        self.setear_planos_borde(region, bordes_a_traquear)
+
+        # Guardamos el dominio
+        self.domain = dominio
+
 
 
 
@@ -156,7 +188,7 @@ class AnugaSW(Simulador):
 
         # Creamos una variable tiempo
         self.tiempo_modelo = 0
-        self.tiempo_base_modelo = 0
+        # self.tiempo_base_modelo = 0
         self.tiempo_ejecucion = 0
 
         # Cargado de polígonos
@@ -167,20 +199,26 @@ class AnugaSW(Simulador):
         # de los bordes
         self.extension_region = pd.read_csv(ruta_extension_region)
 
-        bordes_a_traquear = self.extension_region.indice_segmento.unique()
+        # Borde izquierdo y derecho, respectivamente (coincide con el indice de los segmentos)
+        self.bordes_a_traquear = {0: 1, 1: 1}
+        self.n_actualizacion_por_tipo = {0: 1, 1: 1}
+        self.idx_p1 = 1
 
         # Creamos el dominio
         self.crear_dominio()
 
-        ########################################
-        ############## CREAR ESTADOS ###########
-        ########################################
-        self.estado = Estado(self.domain, self.region, bordes_a_traquear)
+        # Crear objeto estado que se encargara de monitorear ciertas cantidades
+
+        '''
+        ARREGLAR TRATADO DE BORDES A TRAQUEAR
+        '''
+        self.estado = Estado(self.domain, self.region, self.bordes_a_traquear)
     
     def crear_dominio(self, nombre_archivo_salida: str='relaves',
                       carpeta_figuras: str='figuras') -> None:
         
-        """Crea el dominio de la simulación
+        """
+        Crea el dominio de la simulación
         """
         # Creamos el dominio
         boundary_tags = {}
@@ -249,7 +287,7 @@ class AnugaSW(Simulador):
             canaleta.set_Q(caudal * fracc)
 
 
-    def ejecutar(self, info_puntos, yieldstep=400, tiempo_extra=1600):
+    def ejecutar(self, info_puntos, yieldstep=400, tiempo_extra=1600, skip_inital_step=False):
         # Creamos las canaletas
         self.crear_canaletas(info_puntos)
 
@@ -260,7 +298,8 @@ class AnugaSW(Simulador):
         canaletas_activadas = True
 
         t_ejecucion = time()
-        for t in self.domain.evolve(yieldstep=yieldstep, duration=self.tiempo_canaletas + tiempo_extra):
+        for t in self.domain.evolve(yieldstep=yieldstep, duration=self.tiempo_canaletas + tiempo_extra,
+                                    skip_initial_step=skip_inital_step):
 
             self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=p.MAX_PLOT_DEPTH)
 
@@ -281,7 +320,8 @@ class AnugaSW(Simulador):
             elapsed = new_t_ejecucion - t_ejecucion
             
             # Guardamos el tiempo del MODELO
-            self.tiempo_modelo = self.tiempo_base_modelo + t
+            # self.tiempo_modelo = self.tiempo_base_modelo + t
+            self.tiempo_modelo = t
 
             # Guardamos datos en el estado
             self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion, elapsed)
@@ -290,8 +330,55 @@ class AnugaSW(Simulador):
             t_ejecucion = new_t_ejecucion
             self.tiempo_ejecucion += elapsed
         
-    def resetear_dominio(self):
-        self.domain = None
-        self.dplotter = None
-        self.crear_dominio()
-        self.estado = Estado(self.domain, self.region, self.extension_region.indice_segmento.unique())
+    def extender_region(self, bordes_a_extender: List[int]):
+
+        # Reseteamos tiempos
+        # self.tiempo_base_modelo = self.tiempo_modelo
+        # self.tiempo_modelo = 0
+
+        # Creamos una nueva región extendida (de ser posible)
+
+        # Determinamos los tipos de borde (son solo 2)
+        tipo_bordes = []
+        for idx_seg in bordes_a_extender:
+            tipo_bordes.append(self.borde_a_tipo[idx_seg])
+        
+        # Verificamos si hay puntos para extender por tipo
+        extension_valida = []
+        puntos_de_extension = []
+        for tipo in tipo_bordes:
+            n_actualizacion = self.n_actualizacion_por_tipo[tipo]
+            if (n_actualizacion, tipo) in self.extension_region.index:
+                extension_valida.append(True)
+                puntos_de_extension.append(list(self.extension_region.loc[(n_actualizacion, tipo)].values))
+            else:
+                extension_valida.append(False)
+                puntos_de_extension.append(None)
+        
+        if ~np.all(extension_valida):
+            return 0
+        
+        # Actualizamos el contador de actualizaciones para las extensiones válidas
+        for i, tipo in enumerate(tipo_bordes):
+            if extension_valida[i]:
+                self.n_actualizacion_por_tipo[tipo] += 1
+            else:
+                # Para las extensiones no válidas, dejamos de traquear el borde asociado
+                self.bordes_a_traquear
+
+        
+
+
+
+        # Eliminamos el dominio
+        self.eliminar_dominio()
+
+    def eliminar_dominio(self):
+        '''
+        Elimina el dominio y otros objetos asociados
+        '''
+        del self.domain
+        del self.dplotter
+
+        for i in range(len(self.operadores_inlet)):
+            del self.operadores_inlet[i]
