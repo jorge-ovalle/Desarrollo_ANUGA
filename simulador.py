@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple, Union, Dict
+from typing import Dict, List
 import pandas as pd
 import numpy as np
 import parameters as p
@@ -8,6 +8,7 @@ from topografia import Topografia
 from time import time
 import anuga
 import psutil
+from estado import Estado
 
 def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
                                area_base: float) -> np.array:
@@ -26,131 +27,6 @@ def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
     # rapidez = 2 * caudal / (np.pi * radio_canaleta**2)
     rapidez = caudal / area_base
     return rapidez * np.array([np.sin(angulo_polar), np.cos(angulo_polar)])
-
-def ecuacion_de_la_recta(x1: float, y1: float, x2: float, y2: float) -> Tuple[float, float, float]:
-    '''
-    Calcula la ecuación de la recta que pasa por los puntos (x1, y1) y (x2, y2)
-
-    Args:
-        x1 (float): Coordenada x del primer punto
-        y1 (float): Coordenada y del primer punto
-        x2 (float): Coordenada x del segundo punto
-        y2 (float): Coordenada y del segundo punto
-    
-    Returns:
-        Tuple[float, float, float]: Coeficientes de la ecuación de la recta de la forma ax + by + c = 0
-    '''
-    if x1 == x2:
-        a = 1
-        b = 0
-        c = -x1
-    else:
-        m = (y2 - y1) / (x2 - x1)
-        a = m
-        b = -1
-        c = y1 - m * x1
-    return a, b, c
-
-class Estado:
-
-    def __init__(self, dominio: anuga.Domain,
-                 region: List, bordes_a_traquear: List[int]):
-        self._df_estado = pd.DataFrame(columns=['tiempo_sim', 'tiempo_inicio_paso',
-                                                'elapsed'])
-        
-        # Obtenemos la ecuación de cada plano borde
-        self.setear_planos_borde(region, bordes_a_traquear)
-
-        # Guardamos el dominio
-        self.domain = dominio
-
-    def calcular_distancias_borde(self) -> Dict[int, float]:
-        '''
-        Calcula la distancia mínima del volumen de agua a cada borde
-
-        Returns:
-            Dict[int, float]: Distancia mínima del volumen de agua a cada borde (en metros)
-        '''
-
-        # Obtenemos las coordenadas de los centroides que tienen agua
-        centroids = self.domain.centroid_coordinates
-        wet_indices = self.domain.get_wet_elements()
-        wet_centroids = centroids[wet_indices]
-
-        # Calculamos la distancia mínima del volumen de agua a cada borde
-        distancias = {}
-        for idx, plano in self.planos_borde.items():
-            if wet_centroids.shape[0] != 0:
-                a, b, c = plano
-                distancias[idx] = np.abs(a * wet_centroids[:, 0] + b * wet_centroids[:, 1] + c) / np.sqrt(a**2 + b**2)
-                distancias[idx] = distancias[idx].min()
-            else:
-                # en caso de que no haya agua
-                distancias[idx] = np.inf
-
-        return distancias
-    
-    def setear_planos_borde(self, region: List, bordes_a_traquear: List[int]) -> None:
-         # Obtenemos la ecuación de cada plano borde
-        self.planos_borde = {}
-        for idx in bordes_a_traquear:
-            idx1, idx2 = idx, (idx + 1) % len(region)
-            x1, y1 = region[idx1]
-            x2, y2 = region[idx2]
-            self.planos_borde[idx] = ecuacion_de_la_recta(x1, y1, x2, y2)
-    
-    def actualizar(self, tiempo_sim: float, tiempo_inicio_paso: float, elapsed: float) -> List[int]:
-        '''
-        Actualiza el estado del dominio
-
-        Args:
-            tiempo_sim (float): Tiempo de simulación (s)
-            tiempo_inicio_paso (float): Tiempo de inicio del paso (s)
-            elapsed (float): Tiempo transcurrido desde el inicio del paso (s)
-        
-        Returns:
-            List[int]: Lista con los índices de los bordes que se deben extender. 
-            Lista vacía si es que no hay bordes a extender o si no es necesario extender
-        '''
-
-        # Guardamos el estado
-        self._df_estado.append([tiempo_sim, tiempo_inicio_paso, elapsed], ignore_index=True)
-
-        # Verificamos si el volumen de agua está muy cerca de algún borde
-        bordes_a_extender = []
-
-        if len(self.planos_borde) > 0:
-            # Calculamos las distancias asociadas 
-            distancias_borde = self.calcular_distancias_borde()
-
-            for idx, dist in distancias_borde.items():
-                if dist < p.DISTANCIA_MINIMA_BORDE:
-                    bordes_a_extender.append(idx)
-        
-        return bordes_a_extender
-    
-    def resetear_dominio(self, dominio: anuga.Domain,
-                         region: List, bordes_a_traquear: List[int]) -> None:
-        '''
-        Resetea el dominio
-
-        Args:
-            region (List): Región del dominio
-            bordes_a_traquear (List[int]): Bordes a traquear
-        '''
-
-        # Eliminamos los planos
-        for idx in self.planos_borde:
-            del self.planos_borde[idx]
-
-        # Seteamos los nuevos planos
-        self.setear_planos_borde(region, bordes_a_traquear)
-
-        # Guardamos el dominio
-        self.domain = dominio
-
-
-
 
 class Simulador(ABC):
 
@@ -188,7 +64,6 @@ class AnugaSW(Simulador):
 
         # Creamos una variable tiempo
         self.tiempo_modelo = 0
-        # self.tiempo_base_modelo = 0
         self.tiempo_ejecucion = 0
 
         # Cargado de polígonos
@@ -199,8 +74,9 @@ class AnugaSW(Simulador):
         # de los bordes
         self.extension_region = pd.read_csv(ruta_extension_region)
 
-        # Borde izquierdo y derecho, respectivamente (coincide con el indice de los segmentos)
-        self.bordes_a_traquear = {0: 1, 1: 1}
+        # Bordes derecho e izquierdo, respectivamente (coincide con el indice de los segmentos)
+        # key: tipo de borde, value: indice del segmento
+        self.bordes_a_traquear = {0: 0, 1: 1}
         self.n_actualizacion_por_tipo = {0: 1, 1: 1}
         self.idx_p1 = 1
 
@@ -209,16 +85,24 @@ class AnugaSW(Simulador):
 
         # Crear objeto estado que se encargara de monitorear ciertas cantidades
 
-        '''
-        ARREGLAR TRATADO DE BORDES A TRAQUEAR
-        '''
         self.estado = Estado(self.domain, self.region, self.bordes_a_traquear)
     
-    def crear_dominio(self, nombre_archivo_salida: str='relaves',
+    def crear_dominio(self, stage: np.array=None,
+                      xmomentum: np.array=None,
+                      ymomentum: np.array=None,
+                      nombre_archivo_salida: str='relaves',
                       carpeta_figuras: str='figuras') -> None:
         
         """
-        Crea el dominio de la simulación
+        Crea el dominio de la simulación.
+        Se inicializa dplotter, se setean condiciones iniciales y de borde.
+
+        Args:
+            stage (np.array): Arreglo con las alturas iniciales del agua en el dominio.
+            xmomentum (np.array): Arreglo con los momentos en x de las celdas.
+            ymomentum (np.array): Arreglo con los momentos en y de las celdas.
+            nombre_archivo_salida (str): Nombre del archivo de salida de tipo sww.
+            carpeta_figuras (str): Carpeta donde se guardarán las figuras.
         """
         # Creamos el dominio
         boundary_tags = {}
@@ -233,10 +117,22 @@ class AnugaSW(Simulador):
         self.domain.set_name(nombre_archivo_salida)
         self.dplotter = anuga.Domain_plotter(self.domain, plot_dir=carpeta_figuras)
 
+        # Seteamos el tiempo de inicio
+        self.domain.set_time(self.tiempo_modelo)
+
         # Seteamos las cantidades relevantes
         self.domain.set_quantity('elevation', self.ruta_topografia, location='centroids')
-        self.domain.set_quantity('friction', self.manning, location='centroids') 
-        self.domain.set_quantity('stage', expression='elevation', location='centroids') # modificable
+        self.domain.set_quantity('friction', self.manning, location='centroids')
+
+        if stage is None:
+            self.domain.set_quantity('stage', expression='elevation', location='centroids')
+        else:
+            self.domain.set_quantity('stage', numeric=stage, location='centroids')
+        
+        if xmomentum is not None:
+            self.domain.set_quantity('xmomentum', numeric=xmomentum, location='centroids')
+        if ymomentum is not None:
+            self.domain.set_quantity('ymomentum', numeric=ymomentum, location='centroids')
 
         # Condiciones de borde
         Bt = anuga.Transmissive_boundary(self.domain)
@@ -288,17 +184,21 @@ class AnugaSW(Simulador):
 
 
     def ejecutar(self, info_puntos, yieldstep=400, tiempo_extra=1600, skip_inital_step=False):
-        # Creamos las canaletas
-        self.crear_canaletas(info_puntos)
+
 
         # Cantidad para modificar caudal cuando se llega a t_inlet_max
         fracc = (self.tiempo_canaletas % yieldstep) / yieldstep
         t_inlet_max = (self.tiempo_canaletas // yieldstep) * yieldstep
 
-        canaletas_activadas = True
+        if self.tiempo_modelo >= t_inlet_max:
+            # Creamos las canaletas
+            self.crear_canaletas(info_puntos)
+            canaletas_activadas = True
+        else:
+            canaletas_activadas = False
 
         t_ejecucion = time()
-        for t in self.domain.evolve(yieldstep=yieldstep, duration=self.tiempo_canaletas + tiempo_extra,
+        for t in self.domain.evolve(yieldstep=yieldstep, finaltime=self.tiempo_canaletas + tiempo_extra,
                                     skip_initial_step=skip_inital_step):
 
             self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=p.MAX_PLOT_DEPTH)
@@ -320,58 +220,91 @@ class AnugaSW(Simulador):
             elapsed = new_t_ejecucion - t_ejecucion
             
             # Guardamos el tiempo del MODELO
-            # self.tiempo_modelo = self.tiempo_base_modelo + t
             self.tiempo_modelo = t
 
             # Guardamos datos en el estado
-            self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion, elapsed)
+            bordes_a_extender = self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion, elapsed)
+
+            # Extendemos la región si es necesario
+            if len(bordes_a_extender) > 0:
+                status = self.extender_region(bordes_a_extender)
+
+                if status == 1:
+                    # Ejecutamos recursivamente despues de extender region
+                    self.ejecutar(info_puntos,
+                                  yieldstep=yieldstep,
+                                  tiempo_extra=tiempo_extra,
+                                  skip_inital_step=True)
+                    break
 
             # Actualizamos el tiempo de ejecución
             t_ejecucion = new_t_ejecucion
             self.tiempo_ejecucion += elapsed
         
-    def extender_region(self, bordes_a_extender: List[int]):
+    def extender_region(self, bordes_a_extender: List[int]) -> int:
 
         # Reseteamos tiempos
         # self.tiempo_base_modelo = self.tiempo_modelo
         # self.tiempo_modelo = 0
 
-        # Creamos una nueva región extendida (de ser posible)
-
-        # Determinamos los tipos de borde (son solo 2)
-        tipo_bordes = []
-        for idx_seg in bordes_a_extender:
-            tipo_bordes.append(self.borde_a_tipo[idx_seg])
         
         # Verificamos si hay puntos para extender por tipo
         extension_valida = []
-        puntos_de_extension = []
-        for tipo in tipo_bordes:
+        puntos_de_extension = {}
+        for tipo in bordes_a_extender:
             n_actualizacion = self.n_actualizacion_por_tipo[tipo]
             if (n_actualizacion, tipo) in self.extension_region.index:
                 extension_valida.append(True)
-                puntos_de_extension.append(list(self.extension_region.loc[(n_actualizacion, tipo)].values))
-            else:
-                extension_valida.append(False)
-                puntos_de_extension.append(None)
-        
-        if ~np.all(extension_valida):
-            return 0
-        
-        # Actualizamos el contador de actualizaciones para las extensiones válidas
-        for i, tipo in enumerate(tipo_bordes):
-            if extension_valida[i]:
+                puntos_de_extension[tipo] = list(self.extension_region.loc[(n_actualizacion, tipo)].values)
+
+                # Actualizamos el contador de actualizaciones para las extensiones válidas
                 self.n_actualizacion_por_tipo[tipo] += 1
             else:
-                # Para las extensiones no válidas, dejamos de traquear el borde asociado
-                self.bordes_a_traquear
-
+                extension_valida.append(False)
+        
+        if ~np.all(extension_valida):
+            # Mantenemos dominio, pero modificamos estado
+            self.bordes_a_traquear = {}
+            self.estado.resetear_dominio(self.domain, self.region, self.bordes_a_traquear)
+            return 0
         
 
+        ''' EXTENSIÓN REGIÓN '''
+        for tipo, punto in puntos_de_extension.items():
+            # localización
+            if tipo == 0:
+                insertion_idx = self.idx_p1 - 1
+                self.idx_p1 += 1
+            else:
+                insertion_idx = self.idx_p1
+            
+            self.region.insert(insertion_idx, punto)
+        
+        self.bordes_a_traquear = {}
+        for tipo in puntos_de_extension.keys():
+            if tipo == 0:
+                self.bordes_a_traquear[tipo] = self.idx_p1 - 1
+            else:
+                self.bordes_a_traquear[tipo] = self.idx_p1
+        
+                
+        # Guardamos el stage del dominio actual:
+        stage = self.domain.quantities['stage'].centroid_values
 
-
+        # Guardamos los momentum
+        xmomentum = self.domain.quantities['xmomentum'].centroid_values
+        ymomentum = self.domain.quantities['ymomentum'].centroid_values
+        
         # Eliminamos el dominio
         self.eliminar_dominio()
+
+        # Creamos nuevo dominio
+        self.crear_dominio(stage=stage, xmomentum=xmomentum, ymomentum=ymomentum)
+
+        # Actualizamos el estado
+        self.estado.resetear_dominio(self.domain, self.region, self.bordes_a_traquear)
+
+        return 1
 
     def eliminar_dominio(self):
         '''
