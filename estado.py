@@ -118,7 +118,7 @@ class Estado:
 
         Args:
             region (List): Región del dominio
-            bordes_a_traquear (List[int]): Bordes a traquear
+            bordes_a_traquear (Dict[int]): Bordes a traquear
         '''
 
         # Eliminamos los planos

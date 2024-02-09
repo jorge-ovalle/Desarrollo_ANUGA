@@ -65,6 +65,7 @@ class AnugaSW(Simulador):
         # Creamos una variable tiempo
         self.tiempo_modelo = 0
         self.tiempo_ejecucion = 0
+        self.tiempo_canaletas = 0
 
         # Cargado de polígonos
         self.region = anuga.read_polygon(ruta_region)
@@ -73,6 +74,7 @@ class AnugaSW(Simulador):
         # Extension de regiones cuando el agua esté muy cerca
         # de los bordes
         self.extension_region = pd.read_csv(ruta_extension_region)
+        self.extension_region.set_index(['n_act', 'tipo'], inplace=True)
 
         # Bordes derecho e izquierdo, respectivamente (coincide con el indice de los segmentos)
         # key: tipo de borde, value: indice del segmento
@@ -183,17 +185,24 @@ class AnugaSW(Simulador):
             canaleta.set_Q(caudal * fracc)
 
 
-    def ejecutar(self, info_puntos, yieldstep=400, tiempo_extra=1600, skip_inital_step=False):
+    def ejecutar(self, info_puntos: pd.DataFrame, yieldstep=400, tiempo_extra=1600, skip_inital_step=False):
 
 
-        # Cantidad para modificar caudal cuando se llega a t_inlet_max
-        fracc = (self.tiempo_canaletas % yieldstep) / yieldstep
         t_inlet_max = (self.tiempo_canaletas // yieldstep) * yieldstep
 
-        if self.tiempo_modelo >= t_inlet_max:
-            # Creamos las canaletas
+        if self.tiempo_modelo <= t_inlet_max:
+            # Creamos las canaletas (se modifica tiempo_canaletas)
             self.crear_canaletas(info_puntos)
+
+            # Cantidad para modificar caudal cuando se llega a t_inlet_max
+            fracc = (self.tiempo_canaletas % yieldstep) / yieldstep
+            t_inlet_max = (self.tiempo_canaletas // yieldstep) * yieldstep
             canaletas_activadas = True
+
+            if self.tiempo_modelo == t_inlet_max:
+                self.modificar_caudal(fracc)
+                if fracc == 0:
+                    canaletas_activadas = False
         else:
             canaletas_activadas = False
 
