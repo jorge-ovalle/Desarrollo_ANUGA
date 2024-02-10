@@ -32,7 +32,7 @@ def ecuacion_de_la_recta(x1: float, y1: float, x2: float, y2: float) -> Tuple[fl
 class Estado:
 
     def __init__(self, dominio: anuga.Domain,
-                 region: List, bordes_a_traquear: Dict[int]):
+                 region: List, bordes_a_traquear: Dict[int, int]):
         self._df_estado = pd.DataFrame(columns=['tiempo_sim', 'tiempo_inicio_paso',
                                                 'elapsed'])
         
@@ -54,7 +54,7 @@ class Estado:
         '''
 
         # Obtenemos las coordenadas de los centroides que tienen agua
-        centroids = self.domain.centroid_coordinates
+        centroids = self.domain.get_centroid_coordinates(absolute=True)
         wet_indices = self.domain.get_wet_elements()
         wet_centroids = centroids[wet_indices]
 
@@ -96,7 +96,9 @@ class Estado:
         '''
 
         # Guardamos el estado
-        self._df_estado.append([tiempo_sim, tiempo_inicio_paso, elapsed], ignore_index=True)
+        columnas = self._df_estado.columns
+        df_aux = pd.DataFrame(columns=columnas, data=[[tiempo_sim, tiempo_inicio_paso, elapsed]])
+        self._df_estado = pd.concat([self._df_estado, df_aux], ignore_index=True)
 
         # Verificamos si el volumen de agua está muy cerca de algún borde
         bordes_a_extender = []
@@ -104,6 +106,8 @@ class Estado:
         if len(self.planos_borde) > 0:
             # Calculamos las distancias asociadas 
             distancias_borde = self.calcular_distancias_borde()
+            print('Distancias a los bordes:', distancias_borde)
+            print()
 
             for idx, dist in distancias_borde.items():
                 if dist < p.DISTANCIA_MINIMA_BORDE:
@@ -112,7 +116,7 @@ class Estado:
         return bordes_a_extender
     
     def resetear_dominio(self, dominio: anuga.Domain,
-                         region: List, bordes_a_traquear: Dict[int]) -> None:
+                         region: List, bordes_a_traquear: Dict[int, int]) -> None:
         '''
         Resetea el dominio
 
@@ -120,10 +124,6 @@ class Estado:
             region (List): Región del dominio
             bordes_a_traquear (Dict[int]): Bordes a traquear
         '''
-
-        # Eliminamos los planos
-        for idx in self.planos_borde:
-            del self.planos_borde[idx]
 
         # Actualizamos bordes a traquear
         self.bordes_a_traquear = bordes_a_traquear

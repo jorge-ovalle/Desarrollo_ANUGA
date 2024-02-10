@@ -38,7 +38,7 @@ class AnugaSW(Simulador):
 
     def __init__(self, ruta_topografia: str, ruta_mascara_tranque: str,
                  ruta_region: str, ruta_interior: str, ruta_extension_region: str,
-                 G: float=2.7, c_p: float=0.499, gamma_d: float=1.6, manning: float=0.025,
+                 G: float=p.G, c_p: float=p.C_p, gamma_d: float=p.GAMMA_d, manning: float=p.MANNING,
                  res_region: float=100,
                  res_interior: float=50):
         
@@ -74,7 +74,7 @@ class AnugaSW(Simulador):
         # Extension de regiones cuando el agua esté muy cerca
         # de los bordes
         self.extension_region = pd.read_csv(ruta_extension_region)
-        self.extension_region.set_index(['n_act', 'tipo'], inplace=True)
+        self.extension_region.set_index(['nact', 'tipo'], inplace=True)
 
         # Bordes derecho e izquierdo, respectivamente (coincide con el indice de los segmentos)
         # key: tipo de borde, value: indice del segmento
@@ -123,7 +123,7 @@ class AnugaSW(Simulador):
         self.domain.set_time(self.tiempo_modelo)
 
         # Seteamos las cantidades relevantes
-        self.domain.set_quantity('elevation', self.ruta_topografia, location='centroids')
+        self.domain.set_quantity('elevation', filename=self.ruta_topografia, location='centroids')
         self.domain.set_quantity('friction', self.manning, location='centroids')
 
         if stage is None:
@@ -163,7 +163,7 @@ class AnugaSW(Simulador):
                     break
                 except:
                     radius += 1
-                    print("Error, aumentando radio")
+                    # print("Error, aumentando radio")
 
             area_indices = region.get_indices()
             area_base = region.areas[area_indices].sum()
@@ -207,10 +207,11 @@ class AnugaSW(Simulador):
             canaletas_activadas = False
 
         t_ejecucion = time()
-        for t in self.domain.evolve(yieldstep=yieldstep, finaltime=self.tiempo_canaletas + tiempo_extra,
+        for t in self.domain.evolve(yieldstep=yieldstep, finaltime=t_inlet_max + tiempo_extra,
                                     skip_initial_step=skip_inital_step):
 
             self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=p.MAX_PLOT_DEPTH)
+            self.domain.print_timestepping_statistics()
 
             # Modificamos el caudal de las canaletas para
             # el periodo I_t = [t, t + yieldstep] si es que tiempo_canaletas \in I_t
@@ -282,10 +283,10 @@ class AnugaSW(Simulador):
         for tipo, punto in puntos_de_extension.items():
             # localización
             if tipo == 0:
-                insertion_idx = self.idx_p1 - 1
+                insertion_idx = self.idx_p1
                 self.idx_p1 += 1
             else:
-                insertion_idx = self.idx_p1
+                insertion_idx = self.idx_p1 + 1
             
             self.region.insert(insertion_idx, punto)
         
@@ -323,4 +324,4 @@ class AnugaSW(Simulador):
         del self.dplotter
 
         for i in range(len(self.operadores_inlet)):
-            del self.operadores_inlet[i]
+            del self.operadores_inlet[0]
