@@ -136,10 +136,21 @@ class AnugaSW(Simulador):
             assert set(quantities_to_restore).issubset(set(['stage', 'xmomentum', 'ymomentum'])), "Las cantidades a restaurar no son válidas"
 
             centroides = self.domain.get_centroid_coordinates(absolute=True)
+
+            ''' FOR DEBUGGING PURPOSES '''
+            self.centroides_new = centroides
+            self.centroides_old = dominio_auxiliar.get_centroid_coordinates(absolute=True)
+            self.stage_old = dominio_auxiliar.quantities['stage'].centroid_values
+            ''' END DEBUGGING PURPOSES'''
+
             for quantity in quantities_to_restore:
                 value = dominio_auxiliar.quantities[quantity].get_values(interpolation_points=centroides)
                 self.domain.set_quantity(quantity, numeric=value, location='centroids')
-            
+
+            ''' FOR DEBUGGING PURPOSES '''
+            self.stage_new = self.domain.quantities['stage'].centroid_values
+            ''' END DEBUGGING PURPOSES'''
+
             # Eliminamos operadores pasados
             for i in range(len(self.operadores_inlet)):
                 del self.operadores_inlet[0]
@@ -172,7 +183,6 @@ class AnugaSW(Simulador):
                     break
                 except:
                     radius += 1
-                    # print("Error, aumentando radio")
 
             area_indices = region.get_indices()
             area_base = region.areas[area_indices].sum()
