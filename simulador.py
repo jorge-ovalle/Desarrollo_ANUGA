@@ -83,17 +83,17 @@ class AnugaSW(Simulador):
         self.idx_p1 = 1
 
         # Creamos el dominio
+        self.domain = None
         self.crear_dominio()
 
         # Crear objeto estado que se encargara de monitorear ciertas cantidades
 
         self.estado = Estado(self.domain, self.region, self.bordes_a_traquear)
     
-    def crear_dominio(self, stage: np.array=None,
-                      xmomentum: np.array=None,
-                      ymomentum: np.array=None,
-                      nombre_archivo_salida: str='relaves',
-                      carpeta_figuras: str='figuras') -> None:
+    def crear_dominio(self, nombre_archivo_salida: str='relaves',
+                      carpeta_figuras: str='figuras',
+                      from_scratch: bool=True,
+                      quantities_to_restore: List[str]=['stage', 'xmomentum', 'ymomentum']) -> None:
         
         """
         Crea el dominio de la simulación.
@@ -105,11 +105,14 @@ class AnugaSW(Simulador):
             ymomentum (np.array): Arreglo con los momentos en y de las celdas.
             nombre_archivo_salida (str): Nombre del archivo de salida de tipo sww.
             carpeta_figuras (str): Carpeta donde se guardarán las figuras.
+            from_scratch (bool): Si es True, se creará el dominio desde cero.
         """
         # Creamos el dominio
         boundary_tags = {}
         for i in range(len(self.region)):
             boundary_tags[f'segment_{i + 1}'] = [i]
+
+        dominio_auxiliar = self.domain
 
         self.domain = anuga.create_domain_from_regions(
             self.region, boundary_tags=boundary_tags,
@@ -126,15 +129,21 @@ class AnugaSW(Simulador):
         self.domain.set_quantity('elevation', filename=self.ruta_topografia, location='centroids')
         self.domain.set_quantity('friction', self.manning, location='centroids')
 
-        if stage is None:
+        if from_scratch:
             self.domain.set_quantity('stage', expression='elevation', location='centroids')
-        else:
-            self.domain.set_quantity('stage', numeric=stage, location='centroids')
         
-        if xmomentum is not None:
-            self.domain.set_quantity('xmomentum', numeric=xmomentum, location='centroids')
-        if ymomentum is not None:
-            self.domain.set_quantity('ymomentum', numeric=ymomentum, location='centroids')
+        else:
+            assert set(quantities_to_restore).issubset(set(['stage', 'xmomentum', 'ymomentum'])), "Las cantidades a restaurar no son válidas"
+
+            centroides = self.domain.get_centroid_coordinates(absolute=True)
+            for quantity in quantities_to_restore:
+                value = dominio_auxiliar.quantities[quantity].get_values(interpolation_points=centroides)
+                self.domain.set_quantity(quantity, numeric=value, location='centroids')
+            
+            # Eliminamos operadores pasados
+            for i in range(len(self.operadores_inlet)):
+                del self.operadores_inlet[0]
+
 
         # Condiciones de borde
         Bt = anuga.Transmissive_boundary(self.domain)
@@ -272,7 +281,7 @@ class AnugaSW(Simulador):
             else:
                 extension_valida.append(False)
         
-        if ~np.all(extension_valida):
+        if ~np.any(extension_valida):
             # Mantenemos dominio, pero modificamos estado
             self.bordes_a_traquear = {}
             self.estado.resetear_dominio(self.domain, self.region, self.bordes_a_traquear)
@@ -290,26 +299,18 @@ class AnugaSW(Simulador):
             
             self.region.insert(insertion_idx, punto)
         
-        self.bordes_a_traquear = {}
-        for tipo in puntos_de_extension.keys():
-            if tipo == 0:
-                self.bordes_a_traquear[tipo] = self.idx_p1 - 1
+        for tipo in bordes_a_extender:
+            if tipo in puntos_de_extension.keys():
+                if tipo == 0:
+                    self.bordes_a_traquear[tipo] = self.idx_p1 - 1
+                else:
+                    self.bordes_a_traquear[tipo] = self.idx_p1
             else:
-                self.bordes_a_traquear[tipo] = self.idx_p1
+                del self.bordes_a_traquear[tipo]
         
-                
-        # Guardamos el stage del dominio actual:
-        stage = self.domain.quantities['stage'].centroid_values
 
-        # Guardamos los momentum
-        xmomentum = self.domain.quantities['xmomentum'].centroid_values
-        ymomentum = self.domain.quantities['ymomentum'].centroid_values
-        
-        # Eliminamos el dominio
-        self.eliminar_dominio()
-
-        # Creamos nuevo dominio
-        self.crear_dominio(stage=stage, xmomentum=xmomentum, ymomentum=ymomentum)
+        # Creamos nuevo dominio con la región extendida
+        self.crear_dominio(from_scratch=False)
 
         # Actualizamos el estado
         self.estado.resetear_dominio(self.domain, self.region, self.bordes_a_traquear)
