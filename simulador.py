@@ -9,6 +9,7 @@ from time import time
 import anuga
 import psutil
 from estado import Estado
+from copy import deepcopy
 
 def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
                                area_base: float) -> np.array:
@@ -84,11 +85,16 @@ class AnugaSW(Simulador):
 
         # Creamos el dominio
         self.domain = None
+        self.dplotter = None
         self.crear_dominio()
 
         # Crear objeto estado que se encargara de monitorear ciertas cantidades
 
         self.estado = Estado(self.domain, self.region, self.bordes_a_traquear)
+
+        ''' FOR DEBUGGING PURPOSES '''
+        self.guardado = True
+        ''' END DEBUGGING PURPOSES '''
     
     def crear_dominio(self, nombre_archivo_salida: str='relaves',
                       carpeta_figuras: str='figuras',
@@ -112,7 +118,11 @@ class AnugaSW(Simulador):
         for i in range(len(self.region)):
             boundary_tags[f'segment_{i + 1}'] = [i]
 
-        dominio_auxiliar = self.domain
+        dominio_auxiliar = deepcopy(self.domain)
+
+        ''' FOR DEBUGGING PURPOSES '''
+        dplotter_auxiliar = deepcopy(self.dplotter)
+        ''' END DEBUGGING PURPOSES '''
 
         self.domain = anuga.create_domain_from_regions(
             self.region, boundary_tags=boundary_tags,
@@ -137,19 +147,19 @@ class AnugaSW(Simulador):
 
             centroides = self.domain.get_centroid_coordinates(absolute=True)
 
-            ''' FOR DEBUGGING PURPOSES '''
-            self.centroides_new = centroides
-            self.centroides_old = dominio_auxiliar.get_centroid_coordinates(absolute=True)
-            self.stage_old = dominio_auxiliar.quantities['stage'].centroid_values
-            ''' END DEBUGGING PURPOSES'''
+            if self.guardado:
+                ''' FOR DEBUGGING PURPOSES '''
+                self.dominio_old = dominio_auxiliar
+                self.dplotter_old = dplotter_auxiliar
+                ''' END DEBUGGING PURPOSES'''
 
             for quantity in quantities_to_restore:
                 value = dominio_auxiliar.quantities[quantity].get_values(interpolation_points=centroides)
                 self.domain.set_quantity(quantity, numeric=value, location='centroids')
-
+            
             ''' FOR DEBUGGING PURPOSES '''
-            self.stage_new = self.domain.quantities['stage'].centroid_values
-            ''' END DEBUGGING PURPOSES'''
+            self.guardado = False
+            ''' END DEBUGGING PURPOSES '''
 
             # Eliminamos operadores pasados
             for i in range(len(self.operadores_inlet)):
@@ -231,6 +241,13 @@ class AnugaSW(Simulador):
 
             self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=p.MAX_PLOT_DEPTH)
             self.domain.print_timestepping_statistics()
+
+            ''' DEBUGGING PURPOSES '''
+            if skip_inital_step:
+                self.dominio_new = self.domain
+                self.dplotter_new = self.dplotter
+                break
+            ''' END DEBUGGING PURPOSES '''
 
             # Modificamos el caudal de las canaletas para
             # el periodo I_t = [t, t + yieldstep] si es que tiempo_canaletas \in I_t
