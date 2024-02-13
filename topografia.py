@@ -29,6 +29,22 @@ class Topografia:
         Returns:
             float: Altura del punto. Si el punto está fuera de la topografía, retorna np.nan
         """
+        projected_x, projected_y = self.determinar_proyeccion(coord_x, coord_y)
+
+        z = self.get_value(projected_x, projected_y)
+
+        return z
+    
+    def determinar_proyeccion(self, coord_x: float, coord_y: float) -> tuple:
+        """Determina la proyección de un punto en la topografía
+
+        Args:
+            coord_x (float): Coordenada x del punto
+            coord_y (float): Coordenada y del punto
+
+        Returns:
+            tuple: Coordenadas de la proyección
+        """
         X = self.dem.columns
         Y = self.dem.index
 
@@ -50,6 +66,30 @@ class Topografia:
         projected_x = X[X_valid_idx[-1]]
         projected_y = Y[Y_valid_idx[0]]
 
-        z = self.dem.loc[projected_y, projected_x]
+        return projected_x, projected_y
+    
+    def set_value(self, coord_x: float, coord_y: float, value: float):
+        """Establece el valor de un punto en la topografía. (coord_x, coord_y) debe
+        estar en la proyección de la topografía
 
-        return z
+        Args:
+            coord_x (float): Coordenada x del punto
+            coord_y (float): Coordenada y del punto
+            value (float): Valor a establecer
+        """
+
+        self.dem.loc[coord_y, coord_x] = value
+
+    def get_value(self, coord_x: float, coord_y: float) -> Union[int, float]:
+        """Obtiene el valor de un punto en la topografía. (coord_x, coord_y) debe
+        estar en la proyección de la topografía
+
+        Args:
+            coord_x (float): Coordenada x del punto
+            coord_y (float): Coordenada y del punto
+
+        Returns:
+            Union[int, float]: Valor del punto
+        """
+
+        return self.dem.loc[coord_y, coord_x]
