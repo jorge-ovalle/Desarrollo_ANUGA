@@ -331,8 +331,6 @@ class AnugaSW(Simulador):
     
     def traspasar_dominio(self, dominio_old: anuga.Domain):
 
-
-        
         # Guardamos información de los triangulos húmedos del dominio anterior
         wet_indices = dominio_old.get_wet_elements()
         wet_triangles_aux = dominio_old.triangles[wet_indices]
@@ -461,3 +459,46 @@ class AnugaSW(Simulador):
         self.domain.set_quantity('stage', numeric=elevation + depths_aux, location='centroids')
         self.domain.set_quantity('xmomentum', numeric=xmoms_aux, location='centroids')
         self.domain.set_quantity('ymomentum', numeric=ymoms_aux, location='centroids')
+
+    
+    def guardar_stage(self):
+        dem = deepcopy(self.topografia.dem)
+
+        for x in dem.columns:
+            for y in dem.index:
+                value = self.topografia.calcular_altura_punto(x, y)
+                if np.isnan(value):
+                    dem.loc[y, x] = value
+                else:
+                    dem.loc[y, x] = 0
+        
+        self.stage = Topografia(dem=dem)
+        area_topo = Topografia(dem=deepcopy(dem))
+
+        wet_indices = self.domain.get_wet_elements()
+        wet_centroids = self.domain.get_centroid_coordinates(absolute=True)[wet_indices]
+        stage_values = self.domain.quantities['stage'].centroid_values
+
+        for idx, centroid in zip(wet_indices, wet_centroids):
+            s = stage_values[idx]
+            # areas_topo = get_intersection_area(stage_topo, xc, yc, cellsize)
+            areas_topo = self.stage.get_intersection_areas(centroid[0], centroid[1], self.res_region)
+
+            for xy, area in areas_topo.items():
+                value = area * s + stage_topo.get_value(*xy)
+                stage_topo.set_value(*xy, value)
+
+                area_value = area + area_topo.get_value(*xy)
+
+                area_topo.set_value(*xy, area_value)
+        
+        # Todos los valores que se mantienen en 0 son NaN
+        stage_topo.dem[area_topo.dem == 0] = np.nan
+        area_topo.dem[area_topo.dem == 0] = np.nan
+
+        # Finalmente, dividimos stage_topo por area_topo
+        stage_topo.dem = stage_topo.dem / area_topo.dem
+        pass
+
+
+

@@ -151,6 +151,3 @@ class Topografia:
             areas_topo[xy] = area
 
         return areas_topo
-    
-    def update_topography(self, xc, yc, cellsize, water_level):
-       pass
