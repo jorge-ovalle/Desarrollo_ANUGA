@@ -22,6 +22,9 @@ G = 2.7
 C_p = 0.499
 GAMMA_d = 1.6
 
+''' Extension de regiones '''
+POND_RADIO = 4
+
 if __name__ == "__main__":
     print(TOWER_COORDS)
     print(RUTA_DEM)

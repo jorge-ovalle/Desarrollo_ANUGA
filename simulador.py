@@ -10,6 +10,7 @@ import anuga
 import psutil
 from estado import Estado
 from copy import deepcopy
+from shapely import Polygon
 
 def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
                                area_base: float) -> np.array:
@@ -28,6 +29,9 @@ def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
     # rapidez = 2 * caudal / (np.pi * radio_canaleta**2)
     rapidez = caudal / area_base
     return rapidez * np.array([np.sin(angulo_polar), np.cos(angulo_polar)])
+
+def in_box(x, y, min_x, min_y, max_x, max_y, margin):
+    return (x >= min_x - margin) and (x <= max_x + margin) and (y >= min_y - margin) and (y <= max_y + margin)
 
 class Simulador(ABC):
 
@@ -93,22 +97,18 @@ class AnugaSW(Simulador):
         self.estado = Estado(self.domain, self.region, self.bordes_a_traquear)
 
         ''' FOR DEBUGGING PURPOSES '''
-        self.guardado = True
+        # self.guardado = True
         ''' END DEBUGGING PURPOSES '''
     
     def crear_dominio(self, nombre_archivo_salida: str='relaves',
                       carpeta_figuras: str='figuras',
-                      from_scratch: bool=True,
-                      quantities_to_restore: List[str]=['stage', 'xmomentum', 'ymomentum']) -> None:
+                      from_scratch: bool=True) -> None:
         
         """
         Crea el dominio de la simulación.
         Se inicializa dplotter, se setean condiciones iniciales y de borde.
 
         Args:
-            stage (np.array): Arreglo con las alturas iniciales del agua en el dominio.
-            xmomentum (np.array): Arreglo con los momentos en x de las celdas.
-            ymomentum (np.array): Arreglo con los momentos en y de las celdas.
             nombre_archivo_salida (str): Nombre del archivo de salida de tipo sww.
             carpeta_figuras (str): Carpeta donde se guardarán las figuras.
             from_scratch (bool): Si es True, se creará el dominio desde cero.
@@ -119,10 +119,6 @@ class AnugaSW(Simulador):
             boundary_tags[f'segment_{i + 1}'] = [i]
 
         dominio_auxiliar = deepcopy(self.domain)
-
-        ''' FOR DEBUGGING PURPOSES '''
-        dplotter_auxiliar = deepcopy(self.dplotter)
-        ''' END DEBUGGING PURPOSES '''
 
         self.domain = anuga.create_domain_from_regions(
             self.region, boundary_tags=boundary_tags,
@@ -143,23 +139,7 @@ class AnugaSW(Simulador):
             self.domain.set_quantity('stage', expression='elevation', location='centroids')
         
         else:
-            assert set(quantities_to_restore).issubset(set(['stage', 'xmomentum', 'ymomentum'])), "Las cantidades a restaurar no son válidas"
-
-            centroides = self.domain.get_centroid_coordinates(absolute=True)
-
-            if self.guardado:
-                ''' FOR DEBUGGING PURPOSES '''
-                self.dominio_old = dominio_auxiliar
-                self.dplotter_old = dplotter_auxiliar
-                ''' END DEBUGGING PURPOSES'''
-
-            for quantity in quantities_to_restore:
-                value = dominio_auxiliar.quantities[quantity].get_values(interpolation_points=centroides)
-                self.domain.set_quantity(quantity, numeric=value, location='centroids')
-            
-            ''' FOR DEBUGGING PURPOSES '''
-            self.guardado = False
-            ''' END DEBUGGING PURPOSES '''
+            self.traspasar_dominio(dominio_auxiliar)
 
             # Eliminamos operadores pasados
             for i in range(len(self.operadores_inlet)):
@@ -243,10 +223,10 @@ class AnugaSW(Simulador):
             self.domain.print_timestepping_statistics()
 
             ''' DEBUGGING PURPOSES '''
-            if skip_inital_step:
-                self.dominio_new = self.domain
-                self.dplotter_new = self.dplotter
-                break
+            # if skip_inital_step:
+            #     self.dominio_new = self.domain
+            #     self.dplotter_new = self.dplotter
+            #     break
             ''' END DEBUGGING PURPOSES '''
 
             # Modificamos el caudal de las canaletas para
@@ -288,11 +268,6 @@ class AnugaSW(Simulador):
             self.tiempo_ejecucion += elapsed
         
     def extender_region(self, bordes_a_extender: List[int]) -> int:
-
-        # Reseteamos tiempos
-        # self.tiempo_base_modelo = self.tiempo_modelo
-        # self.tiempo_modelo = 0
-
         
         # Verificamos si hay puntos para extender por tipo
         extension_valida = []
@@ -353,3 +328,136 @@ class AnugaSW(Simulador):
 
         for i in range(len(self.operadores_inlet)):
             del self.operadores_inlet[0]
+    
+    def traspasar_dominio(self, dominio_old: anuga.Domain):
+
+
+        
+        # Guardamos información de los triangulos húmedos del dominio anterior
+        wet_indices = dominio_old.get_wet_elements()
+        wet_triangles_aux = dominio_old.triangles[wet_indices]
+        wet_centroids = dominio_old.get_centroid_coordinates(absolute=True)[wet_indices]
+
+        nodes = dominio_old.get_nodes(absolute=True)
+        wet_triangles = []
+
+        depths = dominio_old.quantities['stage'].centroid_values - dominio_old.quantities['elevation'].centroid_values
+        wet_depths = depths[wet_indices]
+        wet_xmoms = dominio_old.quantities['xmomentum'].centroid_values[wet_indices]
+        wet_ymoms = dominio_old.quantities['ymomentum'].centroid_values[wet_indices]
+
+        min_x = np.inf
+        min_y = np.inf
+        max_x = -1
+        max_y = -1
+
+        for idx in range(len(wet_triangles_aux)):
+            triangle = wet_triangles_aux[idx]
+            centroid = wet_centroids[idx]
+            h = wet_depths[idx]
+            mx = wet_xmoms[idx]
+            my = wet_ymoms[idx]
+
+            t = []
+            for tidx in triangle:
+                t.append(nodes[tidx])
+            
+            local_min_x, local_min_y = np.min(t, axis=0)
+            local_max_x, local_max_y = np.max(t, axis=0)
+
+            min_x = min(min_x, local_min_x)
+            min_y = min(min_y, local_min_y)
+            max_x = max(max_x, local_max_x)
+            max_y = max(max_y, local_max_y)
+
+            max_dist = np.max(np.linalg.norm(t - centroid, axis=1))
+            radio = max_dist * p.POND_RADIO
+
+            # Creamos poligono
+            poly = (Polygon(t), h, mx, my, radio)
+            wet_triangles.append(poly)
+        
+        # Guardamos laa informació geométrica de los nuevos triángulos
+        nodes = self.domain.get_nodes(absolute=True)
+        triangles_aux = self.domain.triangles
+        centroids = self.domain.get_centroid_coordinates(absolute=True)
+
+        triangles = []
+        obj_indices = []
+        comparison_points = []
+        margin = np.sqrt(self.res_region)
+        for idx in range(len(centroids)):
+            t = []
+            inside_box = [in_box(centroids[idx][0], centroids[idx][1], min_x, min_y, max_x, max_y, margin)]
+            for node_idx in triangles_aux[idx]:
+                x, y = nodes[node_idx]
+                inside_box.append(in_box(x, y, min_x, min_y, max_x, max_y, margin))
+
+                t.append(nodes[node_idx])
+            inside_box = np.any(inside_box)
+            
+            if inside_box:
+                triangles.append(Polygon(t))
+                comparison_points.append(t + [centroids[idx]])
+                obj_indices.append(idx)
+        
+        # Puntos de comparación para los centroides húmedos
+        comparison_points = np.array(comparison_points)
+        
+
+        # Inicializamos contenedores para las nuevas cantidades
+        depths_aux = [0] * len(centroids)
+        xmoms_aux = [0] * len(centroids)
+        ymoms_aux = [0] * len(centroids)
+        areas_aux = [0] * len(centroids)
+
+        # total = len(wet_triangles)
+        # i = 1
+
+        for wet_triangle in wet_triangles:
+            wt, h, mx, my, radio = wet_triangle
+            # print('Procesando triángulo húmedo {}/{}'.format(i, total))
+            # i += 1
+
+            wet_centroid = np.array([wt.centroid.x, wt.centroid.y])
+            tidxs = np.where(np.any(np.linalg.norm(comparison_points - wet_centroid, axis=2) < radio, axis=1))[0]
+            tidxs = tidxs.astype(int)
+            # print(len(tidxs))
+
+            selected_triangles = [triangles[idx] for idx in tidxs]
+            selected_indices = [obj_indices[idx] for idx in tidxs]
+
+
+            for t, idx in zip(selected_triangles, selected_indices):
+                    area = wt.intersection(t).area
+
+                    areas_aux[idx] += area 
+                    depths_aux[idx] += h * area
+                    xmoms_aux[idx] += mx * area
+                    ymoms_aux[idx] += my * area
+
+
+
+        areas_aux = np.array(areas_aux)      
+        depths_aux = np.array(depths_aux)
+        xmoms_aux = np.array(xmoms_aux)
+        ymoms_aux = np.array(ymoms_aux)
+
+        wet_indices_aux = np.where(areas_aux > 0)[0]
+
+        areas_aux2 = self.domain.areas
+
+        depths_aux[wet_indices_aux] = depths_aux[wet_indices_aux] / areas_aux2[wet_indices_aux]
+        xmoms_aux[wet_indices_aux] = xmoms_aux[wet_indices_aux] / areas_aux2[wet_indices_aux]
+        ymoms_aux[wet_indices_aux] = ymoms_aux[wet_indices_aux] / areas_aux2[wet_indices_aux]
+
+        depth_mask = depths_aux < 1e-12
+        depths_aux[depth_mask] = 0
+        xmoms_aux[depth_mask] = 0
+        ymoms_aux[depth_mask] = 0
+
+        # Seteamos las cantidades en el nuevo dominio
+        elevation = self.domain.quantities['elevation'].centroid_values
+        self.domain.set_quantity('stage', numeric=elevation + depths_aux, location='centroids')
+        self.domain.set_quantity('xmomentum', numeric=xmoms_aux, location='centroids')
+        self.domain.set_quantity('ymomentum', numeric=ymoms_aux, location='centroids')
