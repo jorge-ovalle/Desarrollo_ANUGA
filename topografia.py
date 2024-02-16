@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from procesamiento_archivos import asc_to_df
 from typing import Union
+from collections import defaultdict
 
 class Topografia:
 
@@ -93,3 +94,63 @@ class Topografia:
         """
 
         return self.dem.loc[coord_y, coord_x]
+
+    
+    def get_intersection_areas(self, xc, yc, cellsize):
+        # Generamos una lista de los puntos del cuadrado centroide
+
+        puntos = [(xc - cellsize/2, yc - cellsize/2, 1, 1),
+                (xc + cellsize/2, yc - cellsize/2, -1, 1),
+                (xc + cellsize/2, yc + cellsize/2, -1, -1),
+                (xc - cellsize/2, yc + cellsize/2, 1, -1)]
+        
+        indices_topo = defaultdict(set)
+        areas_topo = {}
+
+        # Iteramos sobre los puntos rellenando primero indices_topo
+        for xe, ye, signox, signoy in puntos:
+            try:
+                # Buscamos las coordenadas proyectadas
+                x, y = self.determinar_proyeccion(xe, ye)
+                indices_topo[(x, y)].add((xe, ye, signox, signoy))
+            except:
+                continue
+
+        for xy, puntos in indices_topo.items():
+            puntos = list(puntos)
+            pivot_point = puntos[0]
+            signox, signoy = pivot_point[2], pivot_point[3]
+
+            inf_limitx = max(min(p[0] for p in puntos), xy[0])
+            sup_limitx = min(max(p[0] for p in puntos), xy[0] + self.cellsize)
+            rangex = sup_limitx - inf_limitx
+            if rangex == 0:
+                # implica que hay un punto adentro nomás
+                if signox == 1:
+                    base = xy[0] + self.cellsize - pivot_point[0]
+                else:
+                    base = pivot_point[0] - xy[0]
+            
+            else:
+                base = rangex
+            
+            
+            inf_limity = max(min(p[1] for p in puntos), xy[1])
+            sup_limity = min(max(p[1] for p in puntos), xy[1] + self.cellsize)
+            rangey = sup_limity - inf_limity
+
+            if rangey == 0:
+                if signoy == 1:
+                    altura = xy[1] + self.cellsize - pivot_point[1]
+                else:
+                    altura = pivot_point[1] - xy[1]
+            else:
+                altura = rangey
+
+            area = base * altura
+            areas_topo[xy] = area
+
+        return areas_topo
+    
+    def update_topography(self, xc, yc, cellsize, water_level):
+       pass
