@@ -462,43 +462,66 @@ class AnugaSW(Simulador):
 
     
     def guardar_stage(self):
+        print('Guardando stage')
         dem = deepcopy(self.topografia.dem)
 
-        for x in dem.columns:
-            for y in dem.index:
-                value = self.topografia.calcular_altura_punto(x, y)
-                if np.isnan(value):
-                    dem.loc[y, x] = value
-                else:
-                    dem.loc[y, x] = 0
+        # for x in dem.columns:
+        #     for y in dem.index:
+        #         print('Rellenando celda {}/{}'.format(x, y))
+        #         value = self.topografia.calcular_altura_punto(x, y)
+        #         if np.isnan(value):
+        #             dem.loc[y, x] = value
+        #         else:
+        #             dem.loc[y, x] = 0
+        
+        dem[~dem.isna()] = 0
         
         self.stage = Topografia(dem=dem)
-        area_topo = Topografia(dem=deepcopy(dem))
+        # area_topo = Topografia(dem=deepcopy(dem))
 
         wet_indices = self.domain.get_wet_elements()
-        wet_centroids = self.domain.get_centroid_coordinates(absolute=True)[wet_indices]
-        stage_values = self.domain.quantities['stage'].centroid_values
+        wet_triangles_aux = self.domain.triangles[wet_indices]
+        depth_values = self.domain.quantities['stage'].centroid_values[wet_indices] - self.domain.quantities['elevation'].centroid_values[wet_indices]
+        nodes = self.domain.get_nodes(absolute=True)
 
-        for idx, centroid in zip(wet_indices, wet_centroids):
-            s = stage_values[idx]
-            # areas_topo = get_intersection_area(stage_topo, xc, yc, cellsize)
-            areas_topo = self.stage.get_intersection_areas(centroid[0], centroid[1], self.res_region)
+        wet_triangles = []
+        for idx in range(len(wet_triangles_aux)):
+            print('Creando triangulo {}/{}'.format(idx, len(wet_triangles_aux)))
+            triangle = wet_triangles_aux[idx]
+            h = depth_values[idx]
 
-            for xy, area in areas_topo.items():
-                value = area * s + stage_topo.get_value(*xy)
-                stage_topo.set_value(*xy, value)
+            t = []
+            for tidx in triangle:
+                t.append(nodes[tidx])
+            
+            wet_triangles.append((t, h))
 
-                area_value = area + area_topo.get_value(*xy)
-
-                area_topo.set_value(*xy, area_value)
+        '''
+        FOR DEBUGGING PURPOSES
+        '''
+        total = len(wet_triangles)
+        i = 1
+        '''
+        END DEBUGGING PURPOSES
+        '''
         
-        # Todos los valores que se mantienen en 0 son NaN
-        stage_topo.dem[area_topo.dem == 0] = np.nan
-        area_topo.dem[area_topo.dem == 0] = np.nan
+        for triangle, h in wet_triangles:
+            print('Procesando triángulo {}/{}'.format(i, total))
+            i += 1
+            
+            areas_topo = self.stage.get_intersection_areas(triangle)
+            for xy, area in areas_topo.items():
+                value = area * h + self.stage.get_value(*xy)
+                self.stage.set_value(*xy, value)
 
-        # Finalmente, dividimos stage_topo por area_topo
-        stage_topo.dem = stage_topo.dem / area_topo.dem
-        pass
+                # area_value = area + area_topo.get_value(*xy)
 
+                # area_topo.set_value(*xy, area_value)
+        
+        self.stage.dem = self.stage.dem / (self.stage.cellsize ** 2)
+        depth_mask = self.stage.dem < 1e-12
+        self.stage.dem[depth_mask] = 0
+
+        # self.depth.dem += self.topografia.dem
 
 

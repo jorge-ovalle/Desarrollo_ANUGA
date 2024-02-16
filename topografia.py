@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
 from procesamiento_archivos import asc_to_df
-from typing import Union
+from typing import Union, List
 from collections import defaultdict
+from shapely import Polygon
 
 class Topografia:
 
@@ -95,8 +96,32 @@ class Topografia:
 
         return self.dem.loc[coord_y, coord_x]
 
+    def get_intersection_areas(self, triangle: List[List[float]]):
+
+        lados = np.array(triangle)
+        t = Polygon(lados)
+
+        xmin, ymin = np.min(lados, axis=0)
+        xmax, ymax = np.max(lados, axis=0)
+
+        # Proyectamos estas cantidades
+        xminp, yminp = self.determinar_proyeccion(xmin, ymin)
+        xmaxp, ymaxp = self.determinar_proyeccion(xmax, ymax)
+
+        areas_topo = {}
+        for x in np.arange(xminp, xmaxp + self.cellsize, self.cellsize):
+            for y in np.arange(yminp, ymaxp + self.cellsize, self.cellsize):
+                aristas = [[x, y],
+                           [x + self.cellsize, y],
+                           [x + self.cellsize, y + self.cellsize],
+                           [x, y + self.cellsize]]
+                cuadrado = Polygon(aristas)
+                areas_topo[(x, y)] = t.intersection(cuadrado).area
+        
+        return areas_topo
+        
     
-    def get_intersection_areas(self, xc, yc, cellsize):
+    def get_intersection_areasV2(self, xc, yc, cellsize):
         # Generamos una lista de los puntos del cuadrado centroide
 
         puntos = [(xc - cellsize/2, yc - cellsize/2, 1, 1),
