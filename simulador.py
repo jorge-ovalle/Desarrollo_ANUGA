@@ -30,7 +30,14 @@ def calcular_velocidad_inicial(caudal: float, angulo_polar: float,
     rapidez = caudal / area_base
     return rapidez * np.array([np.sin(angulo_polar), np.cos(angulo_polar)])
 
-def in_box(x, y, min_x, min_y, max_x, max_y, margin):
+def in_box(x: float, y: float, min_x: float, min_y: float, max_x: float, max_y: float, margin: float):
+    '''
+    Verifica si un punto (x, y) está dentro de un rectángulo
+    con esquinas (min_x - margin, min_y - margin) y (max_x + margin, max_y + margin)
+
+    Returns:
+        bool: True si el punto está dentro del rectángulo, False en caso contrario
+    '''
     return (x >= min_x - margin) and (x <= max_x + margin) and (y >= min_y - margin) and (y <= max_y + margin)
 
 class Simulador(ABC):
@@ -43,9 +50,29 @@ class AnugaSW(Simulador):
 
     def __init__(self, ruta_topografia: str, ruta_mascara_tranque: str,
                  ruta_region: str, ruta_interior: str, ruta_extension_region: str,
-                 G: float=p.G, c_p: float=p.C_p, gamma_d: float=p.GAMMA_d, manning: float=p.MANNING,
-                 res_region: float=100,
+                 nombre_salida_sww: str='relaves', carpeta_figuras: str='figuras_aux',
+                 mesh_filename: str='malla.msh', G: float=p.G, c_p: float=p.C_p,
+                 gamma_d: float=p.GAMMA_d, manning: float=p.MANNING, res_region: float=100,
                  res_interior: float=50):
+        '''
+        Inicializa el simulador
+
+        Args:
+            ruta_topografia (str): Ruta del archivo ASC de la topografía
+            ruta_mascara_tranque (str): Ruta del archivo ASC de la máscara del tranque
+            ruta_region (str): Ruta del archivo CSV de la región
+            ruta_interior (str): Ruta del archivo CSV del interior
+            ruta_extension_region (str): Ruta del archivo CSV de la extensión de la región
+            nombre_salida_sww (str): Nombre del archivo de salida SWW
+            carpeta_figuras (str): Carpeta de las figuras
+            mesh_filename (str): Nombre del archivo de la malla
+            G (float): Gravedad específica del relave (adimencional)
+            c_p (float): Concentración de sólidos en peso (adimencional)
+            gamma_d (float): Densidad seca del relave (ton/m^3)
+            manning (float): Coeficiente de rugosidad de Manning (adimencional)
+            res_region (float): Resolución de la región (m^2)
+            res_interior (float): Resolución del interior (m^2)
+        '''
         
         # Guardamos los parámetros
         self.G = G
@@ -54,6 +81,9 @@ class AnugaSW(Simulador):
         self.manning = manning
         self.res_region = res_region
         self.res_interior = res_interior
+        self.nombre_salida_sww = nombre_salida_sww
+        self.carpeta_figuras = carpeta_figuras
+        self.mesh_filename = mesh_filename
 
         # Creamos el objeto topografia
         self.topografia = Topografia(ruta_topografia)
@@ -100,17 +130,13 @@ class AnugaSW(Simulador):
         # self.guardado = True
         ''' END DEBUGGING PURPOSES '''
     
-    def crear_dominio(self, nombre_archivo_salida: str='relaves',
-                      carpeta_figuras: str='figuras',
-                      from_scratch: bool=True) -> None:
+    def crear_dominio(self, from_scratch: bool=True) -> None:
         
         """
         Crea el dominio de la simulación.
         Se inicializa dplotter, se setean condiciones iniciales y de borde.
 
         Args:
-            nombre_archivo_salida (str): Nombre del archivo de salida de tipo sww.
-            carpeta_figuras (str): Carpeta donde se guardarán las figuras.
             from_scratch (bool): Si es True, se creará el dominio desde cero.
         """
         # Creamos el dominio
@@ -123,10 +149,11 @@ class AnugaSW(Simulador):
         self.domain = anuga.create_domain_from_regions(
             self.region, boundary_tags=boundary_tags,
             maximum_triangle_area=self.res_region,
-            interior_regions=[[self.interior, self.res_interior]])
+            interior_regions=[[self.interior, self.res_interior]],
+            mesh_filename=self.mesh_filename)
 
-        self.domain.set_name(nombre_archivo_salida)
-        self.dplotter = anuga.Domain_plotter(self.domain, plot_dir=carpeta_figuras)
+        self.domain.set_name(self.nombre_salida_sww)
+        self.dplotter = anuga.Domain_plotter(self.domain, plot_dir=self.carpeta_figuras)
 
         # Seteamos el tiempo de inicio
         self.domain.set_time(self.tiempo_modelo)
@@ -156,11 +183,18 @@ class AnugaSW(Simulador):
         self.domain.set_boundary(boundary_setter)
     
     def calcular_caudal(self, tasa_masa_seca: float) -> float:
+        '''
+        Transforma una tasa de masa seca (ton/s) a caudal (m^3/s)
+        '''
         q = tasa_masa_seca * (self.c_p + self.G * (1 - self.c_p)) / (self.c_p * self.G)
         return q
 
     
     def crear_canaletas(self, info_puntos: pd.DataFrame) -> None:
+        '''
+        Crea las canaletas a partir de la información de los puntos de
+        descarga de 'info_puntos'
+        '''
         self.operadores_inlet = []
 
         for _, row in info_puntos.iterrows():
@@ -189,12 +223,26 @@ class AnugaSW(Simulador):
         self.tiempo_canaletas = (info_puntos.tms / info_puntos.tasa_diaria).max()
     
     def modificar_caudal(self, fracc: float):
+        '''
+        Modifica el caudal de las canaletas en un factor 'fracc'
+        '''
         for canaleta in self.operadores_inlet:
             caudal = canaleta.get_Q()
             canaleta.set_Q(caudal * fracc)
 
 
     def ejecutar(self, info_puntos: pd.DataFrame, yieldstep=400, tiempo_extra=1600, skip_inital_step=False):
+        '''
+        Ejecuta una simulación a partir de la información de los puntos de descarga de 'info_puntos'
+
+        Args:
+            info_puntos (pd.DataFrame): Información de los puntos de descarga
+            yieldstep (int): Paso de tiempo (en segundos)
+            tiempo_extra (int): Tiempo extra de simulación (en segundos) después de que las
+                                canaletas se apagan
+            skip_inital_step (bool): Si es True, no se ejecutará el tiempo inicial asociado
+                                    al dominio.
+        '''
 
 
         t_inlet_max = (self.tiempo_canaletas // yieldstep) * yieldstep
@@ -249,8 +297,12 @@ class AnugaSW(Simulador):
             new_t_ejecucion = time()
             elapsed = new_t_ejecucion - t_ejecucion
 
+            # Información de uso de RAM
+            info_ram = psutil.virtual_memory()
+
             # Guardamos datos en el estado
-            bordes_a_extender = self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion, elapsed)
+            bordes_a_extender = self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion,
+                                                       elapsed, info_ram.used / (1024 ** 3), info_ram.percent)
             # Extendemos la región si es necesario
             if len(bordes_a_extender) > 0:
                 ti = time()
@@ -275,6 +327,17 @@ class AnugaSW(Simulador):
             self.tiempo_ejecucion += elapsed
         
     def extender_region(self, bordes_a_extender: List[int]) -> int:
+        '''
+        Extiende la región del dominio añadiendo puntos adicionales a los bordes
+        de tipo \in bordes_a_extender
+
+        Args:
+            bordes_a_extender (List[int]): Lista con los tipos de bordes a extender
+        
+        Returns:
+            int: 1 si se extendió la región, 0 en caso que todas las extensiones
+            sean inválidas, i.e. no existen puntos a agregar en self.extension_region
+        '''
         
         # Verificamos si hay puntos para extender por tipo
         extension_valida = []
@@ -344,6 +407,14 @@ class AnugaSW(Simulador):
             del self.operadores_inlet[0]
     
     def traspasar_dominio(self, dominio_old: anuga.Domain):
+        '''
+        Se traspasa información de stage, xmomentum, ymomentum de dominio_old
+        a self.domain. Realiza las interpolaciones necesarias para ajustarse
+        a la malla de self.domain
+
+        Args:
+            dominio_old (anuga.Domain)
+        '''
 
         # Guardamos información de los triangulos húmedos del dominio anterior
         wet_indices = dominio_old.get_wet_elements()
@@ -389,7 +460,7 @@ class AnugaSW(Simulador):
             poly = (Polygon(t), h, mx, my, radio)
             wet_triangles.append(poly)
         
-        # Guardamos laa informació geométrica de los nuevos triángulos
+        # Guardamos laa información geométrica de los nuevos triángulos
         nodes = self.domain.get_nodes(absolute=True)
         triangles_aux = self.domain.triangles
         centroids = self.domain.get_centroid_coordinates(absolute=True)
@@ -476,22 +547,10 @@ class AnugaSW(Simulador):
 
     
     def guardar_stage(self):
-        print('Guardando stage')
-        dem = deepcopy(self.topografia.dem)
-
-        # for x in dem.columns:
-        #     for y in dem.index:
-        #         print('Rellenando celda {}/{}'.format(x, y))
-        #         value = self.topografia.calcular_altura_punto(x, y)
-        #         if np.isnan(value):
-        #             dem.loc[y, x] = value
-        #         else:
-        #             dem.loc[y, x] = 0
-        
-        dem[~dem.isna()] = 0
-        
-        self.stage = Topografia(dem=dem)
-        # area_topo = Topografia(dem=deepcopy(dem))
+        '''
+        Almacena el stage utilizando la grilla de self.topografia
+        Se crea self.stage como un objeto Topografia
+        '''
 
         wet_indices = self.domain.get_wet_elements()
         wet_triangles_aux = self.domain.triangles[wet_indices]
@@ -499,16 +558,34 @@ class AnugaSW(Simulador):
         nodes = self.domain.get_nodes(absolute=True)
 
         wet_triangles = []
+        min_x = np.inf
+        min_y = np.inf
+        max_x = -1
+        max_y = -1
         for idx in range(len(wet_triangles_aux)):
-            # print('Creando triangulo {}/{}'.format(idx, len(wet_triangles_aux)))
             triangle = wet_triangles_aux[idx]
             h = depth_values[idx]
 
             t = []
             for tidx in triangle:
                 t.append(nodes[tidx])
-            
+
+            local_min_x, local_min_y = np.min(t, axis=0)
+            local_max_x, local_max_y = np.max(t, axis=0)
+            min_x = min(min_x, local_min_x)
+            min_y = min(min_y, local_min_y)
+            max_x = max(max_x, local_max_x)
+            max_y = max(max_y, local_max_y)
             wet_triangles.append((t, h))
+        min_xp, min_yp = self.topografia.determinar_proyeccion(min_x, min_y)
+        max_xp, max_yp = self.topografia.determinar_proyeccion(max_x, max_y)
+        
+        # Creamos un objeto topografia
+        dem = deepcopy(self.topografia.dem.loc[max_yp:min_yp, min_xp:max_xp])
+
+        dem[~dem.isna()] = 0
+        
+        self.stage = Topografia(dem=dem)
 
         # '''
         # FOR DEBUGGING PURPOSES

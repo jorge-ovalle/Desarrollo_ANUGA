@@ -1,17 +1,20 @@
 import numpy as np
 import pandas as pd
 from procesamiento_archivos import asc_to_df
-from typing import Union, List
+from typing import Union, List, Dict
 from collections import defaultdict
 from shapely import Polygon
 
 class Topografia:
 
     def __init__(self, ruta_asc: str=None, dem: pd.DataFrame=None):
-        """Inicializa la topografía
+        """
+        Inicializa la topografía
 
         Args:
             ruta_asc (str): Ruta del archivo ASC
+            dem (pd.DataFrame): DataFrame con los datos de elevación. Se ignora
+            ruta_asc si dem no es None
         """
 
         if dem is None:
@@ -22,7 +25,8 @@ class Topografia:
         self.cellsize = self.dem.columns[1] - self.dem.columns[0]
 
     def calcular_altura_punto(self, coord_x: float, coord_y: float) -> float:
-        """Calcula la altura de un punto en la topografía
+        """
+        Calcula la altura de un punto en la topografía
 
         Args:
             coord_x (float): Coordenada x del punto
@@ -38,7 +42,8 @@ class Topografia:
         return z
     
     def determinar_proyeccion(self, coord_x: float, coord_y: float) -> tuple:
-        """Determina la proyección de un punto en la topografía
+        """
+        Determina la proyección de un punto en la topografía
 
         Args:
             coord_x (float): Coordenada x del punto
@@ -71,7 +76,8 @@ class Topografia:
         return projected_x, projected_y
     
     def set_value(self, coord_x: float, coord_y: float, value: float):
-        """Establece el valor de un punto en la topografía. (coord_x, coord_y) debe
+        """
+        Establece el valor de un punto en la topografía. (coord_x, coord_y) debe
         estar en la proyección de la topografía
 
         Args:
@@ -83,7 +89,8 @@ class Topografia:
         self.dem.loc[coord_y, coord_x] = value
 
     def get_value(self, coord_x: float, coord_y: float) -> Union[int, float]:
-        """Obtiene el valor de un punto en la topografía. (coord_x, coord_y) debe
+        """
+        Obtiene el valor de un punto en la topografía. (coord_x, coord_y) debe
         estar en la proyección de la topografía
 
         Args:
@@ -96,7 +103,19 @@ class Topografia:
 
         return self.dem.loc[coord_y, coord_x]
 
-    def get_intersection_areas(self, triangle: List[List[float]]):
+    def get_intersection_areas(self, triangle: List[List[float]]) -> Dict[tuple, float]:
+        """
+        Obtiene las áreas de intersección de un triángulo con las celdas
+        de la topografia
+
+        Args:
+            triangle (List[List[float]]): Lista con las coordenadas de los vértices del triángulo.
+        
+        Returns:
+            Dict[tuple, float]: Diccionario con las áreas de intersección. Las llaves son las coordenadas
+            del extremo inferior izquierdo de la celda y el valor es el área de intersección.
+
+        """
 
         lados = np.array(triangle)
         t = Polygon(lados)

@@ -32,9 +32,18 @@ def ecuacion_de_la_recta(x1: float, y1: float, x2: float, y2: float) -> Tuple[fl
 class Estado:
 
     def __init__(self, dominio: anuga.Domain,
-                 region: List, bordes_a_traquear: Dict[int, int]):
+                 region: List[List[float]], bordes_a_traquear: Dict[int, int]):
+        '''
+        Inicializa el estado del dominio
+
+        Args:
+            dominio (anuga.Domain): Dominio
+            region (List): Región del dominio. Cada entrada son las coordenadas de los vértices de la región
+            bordes_a_traquear (Dict[int, int]): Bordes a traquear. Las llaves son el tipo de borde
+            y los valores los índices de los segmentos asociados.
+        '''
         self._df_estado = pd.DataFrame(columns=['tiempo_sim', 'tiempo_inicio_paso',
-                                                'elapsed'])
+                                                'elapsed', 'uso_ram', 'porcentaje_uso_ram'])
         
         # Guardamos los bordes a traquear
         self.bordes_a_traquear = bordes_a_traquear
@@ -50,7 +59,8 @@ class Estado:
         Calcula la distancia mínima del volumen de agua a cada borde
 
         Returns:
-            Dict[int, float]: Distancia mínima del volumen de agua a cada borde (en metros)
+            Dict[int, float]: Distancia mínima del volumen de agua a cada borde (en metros).
+            Las llaves son el tipo de borde y los valores las distancias del volumen de agua a cada borde
         '''
 
         # Obtenemos las coordenadas de los centroides que tienen agua
@@ -87,7 +97,10 @@ class Estado:
 
         return distancias, radio
     
-    def setear_planos_borde(self, region: List) -> None:
+    def setear_planos_borde(self, region: List[List[float]]) -> None:
+        '''
+        Setea el plano de cada borde a traquear
+        '''
 
         # Obtenemos la ecuación de cada plano borde
         self.planos_borde = {}
@@ -97,7 +110,8 @@ class Estado:
             x2, y2 = region[idx2]
             self.planos_borde[tipo] = ecuacion_de_la_recta(x1, y1, x2, y2)
     
-    def actualizar(self, tiempo_sim: float, tiempo_inicio_paso: float, elapsed: float) -> List[int]:
+    def actualizar(self, tiempo_sim: float, tiempo_inicio_paso: float,
+                   elapsed: float, uso_ram: float, porcentaje_uso_ram: float) -> List[int]:
         '''
         Actualiza el estado del dominio
 
@@ -105,6 +119,9 @@ class Estado:
             tiempo_sim (float): Tiempo de simulación (s)
             tiempo_inicio_paso (float): Tiempo de inicio del paso (s)
             elapsed (float): Tiempo transcurrido desde el inicio del paso (s)
+            uso_ram (float): Uso de RAM (GB)
+            porcentaje_uso_ram (float): Porcentaje de uso de RAM (%) respecto al total
+            disponible
         
         Returns:
             List[int]: Lista con el tipo de los bordes a extender.
@@ -113,7 +130,8 @@ class Estado:
 
         # Guardamos el estado
         columnas = self._df_estado.columns
-        df_aux = pd.DataFrame(columns=columnas, data=[[tiempo_sim, tiempo_inicio_paso, elapsed]])
+        data = [[tiempo_sim, tiempo_inicio_paso, elapsed, uso_ram, porcentaje_uso_ram]]
+        df_aux = pd.DataFrame(columns=columnas, data=data)
         self._df_estado = pd.concat([self._df_estado, df_aux], ignore_index=True)
 
         # Verificamos si el volumen de agua está muy cerca de algún borde
@@ -133,7 +151,7 @@ class Estado:
         return bordes_a_extender
     
     def resetear_dominio(self, dominio: anuga.Domain,
-                         region: List, bordes_a_traquear: Dict[int, int]) -> None:
+                         region: List[List[float]], bordes_a_traquear: Dict[int, int]) -> None:
         '''
         Resetea el dominio
 
