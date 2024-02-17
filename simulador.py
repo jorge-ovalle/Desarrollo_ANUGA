@@ -279,6 +279,7 @@ class AnugaSW(Simulador):
         # Verificamos si hay puntos para extender por tipo
         extension_valida = []
         puntos_de_extension = {}
+        dejar_de_traquear = []
         for tipo in bordes_a_extender:
             n_actualizacion = self.n_actualizacion_por_tipo[tipo]
             if (n_actualizacion, tipo) in self.extension_region.index:
@@ -287,8 +288,14 @@ class AnugaSW(Simulador):
 
                 # Actualizamos el contador de actualizaciones para las extensiones válidas
                 self.n_actualizacion_por_tipo[tipo] += 1
+                
+                # Verificamos si serán posibles futuras extensiones
+                if (n_actualizacion + 1, tipo) not in self.extension_region.index:
+                    dejar_de_traquear.append(tipo)
+                
             else:
                 extension_valida.append(False)
+                dejar_de_traquear.append(tipo)
         
         if ~np.any(extension_valida):
             # Mantenemos dominio, pero modificamos estado
@@ -307,15 +314,15 @@ class AnugaSW(Simulador):
                 insertion_idx = self.idx_p1 + 1
             
             self.region.insert(insertion_idx, punto)
-        
+            
         for tipo in bordes_a_extender:
-            if tipo in puntos_de_extension.keys():
+            if tipo in dejar_de_traquear:
+                del self.bordes_a_traquear[tipo]
+            else:
                 if tipo == 0:
                     self.bordes_a_traquear[tipo] = self.idx_p1 - 1
                 else:
                     self.bordes_a_traquear[tipo] = self.idx_p1
-            else:
-                del self.bordes_a_traquear[tipo]
         
 
         # Creamos nuevo dominio con la región extendida

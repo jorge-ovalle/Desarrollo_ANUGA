@@ -75,7 +75,7 @@ class Estado:
 
 
         # Calculamos la distancia mínima del volumen de agua a cada borde
-        distancias = {}
+        distancias = {} 
         for idx, plano in self.planos_borde.items():
             if wet_centroids.shape[0] != 0:
                 a, b, c = plano
