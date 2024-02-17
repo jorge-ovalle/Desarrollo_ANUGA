@@ -56,7 +56,23 @@ class Estado:
         # Obtenemos las coordenadas de los centroides que tienen agua
         centroids = self.domain.get_centroid_coordinates(absolute=True)
         wet_indices = self.domain.get_wet_elements()
+        wet_triangles_aux = self.domain.triangles[wet_indices]
         wet_centroids = centroids[wet_indices]
+
+        nodes = self.domain.get_nodes(absolute=True)
+
+        radio = 0
+        for idx in range(len(wet_triangles_aux)):
+            triangle = wet_triangles_aux[idx]
+            centroid = wet_centroids[idx]
+            t = []
+            for tidx in triangle:
+                t.append(nodes[tidx])
+            max_local_dist = np.max(np.linalg.norm(t - centroid, axis=1))
+            radio_local = max_local_dist * p.POND_DISTANCIA_MINIMA_BORDE
+
+            radio = max(radio, radio_local)
+
 
         # Calculamos la distancia mínima del volumen de agua a cada borde
         distancias = {}
@@ -69,7 +85,7 @@ class Estado:
                 # en caso de que no haya agua
                 distancias[idx] = np.inf
 
-        return distancias
+        return distancias, radio
     
     def setear_planos_borde(self, region: List) -> None:
 
@@ -105,12 +121,13 @@ class Estado:
 
         if len(self.planos_borde) > 0:
             # Calculamos las distancias asociadas 
-            distancias_borde = self.calcular_distancias_borde()
+            distancias_borde, radio = self.calcular_distancias_borde()
             print('Distancias a los bordes:', distancias_borde)
+            print('Radio:', radio)
             print()
 
             for idx, dist in distancias_borde.items():
-                if dist < p.DISTANCIA_MINIMA_BORDE:
+                if dist < radio:
                     bordes_a_extender.append(idx)
         
         return bordes_a_extender

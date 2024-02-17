@@ -239,31 +239,38 @@ class AnugaSW(Simulador):
             # Se apagan las canaletas
             if canaletas_activadas and t > t_inlet_max:
                 self.modificar_caudal(0)
-                canaletas_activadas = False
-            
-            # Actualizamos tiempos de ejecucion
-            new_t_ejecucion = time()
-            elapsed = new_t_ejecucion - t_ejecucion
+                canaletas_activadas = False  
+
             
             # Guardamos el tiempo del MODELO
-            self.tiempo_modelo = t
+            self.tiempo_modelo = t          
+
+            # Actualizamos el tiempo de ejecución
+            new_t_ejecucion = time()
+            elapsed = new_t_ejecucion - t_ejecucion
 
             # Guardamos datos en el estado
             bordes_a_extender = self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion, elapsed)
-
             # Extendemos la región si es necesario
             if len(bordes_a_extender) > 0:
+                ti = time()
                 status = self.extender_region(bordes_a_extender)
+                extra_elapsed = time() - ti
 
                 if status == 1:
+                    # Ajustamos el elapsed con el tiempo de extension
+                    elapsed = extra_elapsed + elapsed
+                    self.estado._df_estado.loc[self.estado._df_estado.index[-1], 'elapsed'] = elapsed
+
+                    self.tiempo_ejecucion += elapsed
+                    
                     # Ejecutamos recursivamente despues de extender region
                     self.ejecutar(info_puntos,
                                   yieldstep=yieldstep,
                                   tiempo_extra=tiempo_extra,
                                   skip_inital_step=True)
                     break
-
-            # Actualizamos el tiempo de ejecución
+        
             t_ejecucion = new_t_ejecucion
             self.tiempo_ejecucion += elapsed
         
@@ -486,7 +493,7 @@ class AnugaSW(Simulador):
 
         wet_triangles = []
         for idx in range(len(wet_triangles_aux)):
-            print('Creando triangulo {}/{}'.format(idx, len(wet_triangles_aux)))
+            # print('Creando triangulo {}/{}'.format(idx, len(wet_triangles_aux)))
             triangle = wet_triangles_aux[idx]
             h = depth_values[idx]
 
@@ -496,18 +503,18 @@ class AnugaSW(Simulador):
             
             wet_triangles.append((t, h))
 
-        '''
-        FOR DEBUGGING PURPOSES
-        '''
-        total = len(wet_triangles)
-        i = 1
-        '''
-        END DEBUGGING PURPOSES
-        '''
+        # '''
+        # FOR DEBUGGING PURPOSES
+        # '''
+        # total = len(wet_triangles)
+        # i = 1
+        # '''
+        # END DEBUGGING PURPOSES
+        # '''
         
         for triangle, h in wet_triangles:
-            print('Procesando triángulo {}/{}'.format(i, total))
-            i += 1
+            # print('Procesando triángulo {}/{}'.format(i, total))
+            # i += 1
             
             areas_topo = self.stage.get_intersection_areas(triangle)
             for xy, area in areas_topo.items():
