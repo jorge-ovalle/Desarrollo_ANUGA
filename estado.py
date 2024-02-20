@@ -3,31 +3,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Tuple
 import parameters as p
-
-
-def ecuacion_de_la_recta(x1: float, y1: float, x2: float, y2: float) -> Tuple[float, float, float]:
-    '''
-    Calcula la ecuación de la recta que pasa por los puntos (x1, y1) y (x2, y2)
-
-    Args:
-        x1 (float): Coordenada x del primer punto
-        y1 (float): Coordenada y del primer punto
-        x2 (float): Coordenada x del segundo punto
-        y2 (float): Coordenada y del segundo punto
-    
-    Returns:
-        Tuple[float, float, float]: Coeficientes de la ecuación de la recta de la forma ax + by + c = 0
-    '''
-    if x1 == x2:
-        a = 1
-        b = 0
-        c = -x1
-    else:
-        m = (y2 - y1) / (x2 - x1)
-        a = m
-        b = -1
-        c = y1 - m * x1
-    return a, b, c
+from geometria import ecuacion_de_la_recta
 
 class Estado:
 
@@ -66,22 +42,22 @@ class Estado:
         # Obtenemos las coordenadas de los centroides que tienen agua
         centroids = self.domain.get_centroid_coordinates(absolute=True)
         wet_indices = self.domain.get_wet_elements()
-        wet_triangles_aux = self.domain.triangles[wet_indices]
+        # wet_triangles_aux = self.domain.triangles[wet_indices]
         wet_centroids = centroids[wet_indices]
 
-        nodes = self.domain.get_nodes(absolute=True)
+        # nodes = self.domain.get_nodes(absolute=True)
 
-        radio = 0
-        for idx in range(len(wet_triangles_aux)):
-            triangle = wet_triangles_aux[idx]
-            centroid = wet_centroids[idx]
-            t = []
-            for tidx in triangle:
-                t.append(nodes[tidx])
-            max_local_dist = np.max(np.linalg.norm(t - centroid, axis=1))
-            radio_local = max_local_dist * p.POND_DISTANCIA_MINIMA_BORDE
+        # radio = 0
+        # for idx in range(len(wet_triangles_aux)):
+        #     triangle = wet_triangles_aux[idx]
+        #     centroid = wet_centroids[idx]
+        #     t = []
+        #     for tidx in triangle:
+        #         t.append(nodes[tidx])
+        #     max_local_dist = np.max(np.linalg.norm(t - centroid, axis=1))
+        #     radio_local = max_local_dist * p.POND_DISTANCIA_MINIMA_BORDE
 
-            radio = max(radio, radio_local)
+        #     radio = max(radio, radio_local)
 
 
         # Calculamos la distancia mínima del volumen de agua a cada borde
@@ -95,7 +71,7 @@ class Estado:
                 # en caso de que no haya agua
                 distancias[idx] = np.inf
 
-        return distancias, radio
+        return distancias, p.DISTANCIA_MINIMA_BORDE
     
     def setear_planos_borde(self, region: List[List[float]]) -> None:
         '''
@@ -168,3 +144,12 @@ class Estado:
 
         # Guardamos el dominio
         self.domain = dominio
+    
+    def eliminar(self):
+        # Eliminar atributos
+        for atributo in dir(self):
+            if not atributo.startswith("__"):
+                delattr(self, atributo)
+
+        # Eliminar la instancia
+        del self

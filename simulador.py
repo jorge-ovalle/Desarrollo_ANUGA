@@ -266,15 +266,14 @@ class AnugaSW(Simulador):
         t_ejecucion = time()
         for t in self.domain.evolve(yieldstep=yieldstep, finaltime=t_inlet_max + tiempo_extra,
                                     skip_initial_step=skip_inital_step):
-
+            
             self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=p.MAX_PLOT_DEPTH)
             self.domain.print_timestepping_statistics()
-
+            
             ''' DEBUGGING PURPOSES '''
-            # if skip_inital_step:
-            #     self.dominio_new = self.domain
-            #     self.dplotter_new = self.dplotter
-            #     break
+            if t == 15200:
+                break 
+
             ''' END DEBUGGING PURPOSES '''
 
             # Modificamos el caudal de las canaletas para
@@ -614,5 +613,5 @@ class AnugaSW(Simulador):
         self.stage.dem[depth_mask] = 0
 
         # self.depth.dem += self.topografia.dem
-
+    
 
