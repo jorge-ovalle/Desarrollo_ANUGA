@@ -1,7 +1,7 @@
 import anuga
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import parameters as p
 from geometria import ecuacion_de_la_recta
 
@@ -60,13 +60,33 @@ class Estado:
         #     radio = max(radio, radio_local)
 
 
+
+        ''' OTRA FORMA DE DETERMINAR EL RADIO DE CONTROL '''
+        # if wet_indices.shape[0] != 0:
+        #     wet_xmomentum = self.domain.quantities['xmomentum'].centroid_values[wet_indices]
+        #     wet_ymomentum = self.domain.quantities['ymomentum'].centroid_values[wet_indices]
+        #     wet_depth = self.domain.quantities['stage'].centroid_values[wet_indices] - self.domain.quantities['elevation'].centroid_values[wet_indices]
+
+        #     wet_vx = wet_xmomentum / wet_depth
+        #     wet_vy = wet_ymomentum / wet_depth
+
+        ''' END '''
+
+
         # Calculamos la distancia mínima del volumen de agua a cada borde
-        distancias = {} 
+        distancias = {}
+        # radio = 0
         for idx, plano in self.planos_borde.items():
             if wet_centroids.shape[0] != 0:
                 a, b, c = plano
-                distancias[idx] = np.abs(a * wet_centroids[:, 0] + b * wet_centroids[:, 1] + c) / np.sqrt(a**2 + b**2)
-                distancias[idx] = distancias[idx].min()
+                d = np.abs(a * wet_centroids[:, 0] + b * wet_centroids[:, 1] + c) / np.sqrt(a**2 + b**2)
+                # min_idx = np.argmin(d)
+                distancias[idx] = np.min(d)
+
+                # director = np.array([a, b]) / np.sqrt(a**2 + b**2)
+                # radio_local = 400 * np.abs(wet_vx[min_idx] * director[0] + wet_vy[min_idx] * director[1])
+                # radio = max(radio, radio_local)
+
             else:
                 # en caso de que no haya agua
                 distancias[idx] = np.inf

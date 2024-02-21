@@ -271,8 +271,8 @@ class AnugaSW(Simulador):
             self.domain.print_timestepping_statistics()
             
             ''' DEBUGGING PURPOSES '''
-            if t == 15200:
-                break 
+            # if t == 15200:
+            #     break 
 
             ''' END DEBUGGING PURPOSES '''
 
