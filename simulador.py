@@ -264,11 +264,17 @@ class AnugaSW(Simulador):
             canaletas_activadas = False
 
         t_ejecucion = time()
+        yieldstep_plot = yieldstep * 9 
+        vmax = 0
         for t in self.domain.evolve(yieldstep=yieldstep, finaltime=t_inlet_max + tiempo_extra,
                                     skip_initial_step=skip_inital_step):
             
-            self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=p.MAX_PLOT_DEPTH)
             self.domain.print_timestepping_statistics()
+
+            if t % yieldstep_plot == 0 and t > 0:
+                depth = self.domain.quantities['stage'].centroid_values - self.domain.quantities['elevation'].centroid_values
+                vmax = max(depth.max(), vmax)
+                self.dplotter.save_depth_frame(vmin=p.MIN_PLOT_DEPTH, vmax=vmax)
             
             ''' DEBUGGING PURPOSES '''
             # if t == 15200:
@@ -302,6 +308,8 @@ class AnugaSW(Simulador):
             # Guardamos datos en el estado
             bordes_a_extender = self.estado.actualizar(self.tiempo_modelo, self.tiempo_ejecucion,
                                                        elapsed, info_ram.used / (1024 ** 3), info_ram.percent)
+            
+            
             # Extendemos la región si es necesario
             if len(bordes_a_extender) > 0:
                 ti = time()
@@ -545,10 +553,10 @@ class AnugaSW(Simulador):
         self.domain.set_quantity('ymomentum', numeric=ymoms_aux, location='centroids')
 
     
-    def guardar_stage(self):
+    def guardar_depth(self):
         '''
         Almacena el stage utilizando la grilla de self.topografia
-        Se crea self.stage como un objeto Topografia
+        Se crea self.depth como un objeto Topografia
         '''
 
         wet_indices = self.domain.get_wet_elements()
@@ -584,7 +592,7 @@ class AnugaSW(Simulador):
 
         dem[~dem.isna()] = 0
         
-        self.stage = Topografia(dem=dem)
+        self.depth = Topografia(dem=dem)
 
         # '''
         # FOR DEBUGGING PURPOSES
@@ -599,18 +607,18 @@ class AnugaSW(Simulador):
             # print('Procesando triángulo {}/{}'.format(i, total))
             # i += 1
             
-            areas_topo = self.stage.get_intersection_areas(triangle)
+            areas_topo = self.depth.get_intersection_areas(triangle)
             for xy, area in areas_topo.items():
-                value = area * h + self.stage.get_value(*xy)
-                self.stage.set_value(*xy, value)
+                value = area * h + self.depth.get_value(*xy)
+                self.depth.set_value(*xy, value)
 
                 # area_value = area + area_topo.get_value(*xy)
 
                 # area_topo.set_value(*xy, area_value)
         
-        self.stage.dem = self.stage.dem / (self.stage.cellsize ** 2)
-        depth_mask = self.stage.dem < 1e-12
-        self.stage.dem[depth_mask] = 0
+        self.depth.dem = self.depth.dem / (self.depth.cellsize ** 2)
+        depth_mask = self.depth.dem < 1e-12
+        self.depth.dem[depth_mask] = 0
 
         # self.depth.dem += self.topografia.dem
     

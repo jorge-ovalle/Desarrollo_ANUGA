@@ -58,9 +58,9 @@ def ejecutar_dia(ruta_topografia: str, sector: int,  dia: int, info_puntos: pd.D
 
     simulador = AnugaSW(ruta_topografia, p.RUTA_MASK_TRANQUE,
                     ruta_region, ruta_interior, ruta_extension,
-                    nombre_salida_sww=f'{RUTA_FOLDER_SWW}relaves_{dia}_{sector}',
+                    nombre_salida_sww=f'relaves',
                     carpeta_figuras=carpeta_figuras,
-                    mesh_filename=f'{RUTA_FOLDER_MALLAS}malla_{dia}_{sector}.msh',
+                    mesh_filename=f'malla.msh',
                     res_region=RES_REGION, res_interior=RES_INTERIOR)
     simulador.ejecutar(info_puntos, yieldstep=yieldstep, tiempo_extra=tiempo_extra)
 
@@ -79,7 +79,7 @@ def ejecutar_dia(ruta_topografia: str, sector: int,  dia: int, info_puntos: pd.D
     min_x, min_y = simulador.depth.dem.columns.min(), simulador.depth.dem.index.min()
     max_x, max_y = simulador.depth.dem.columns.max(), simulador.depth.dem.index.max()
     topo_act = deepcopy(simulador.topografia.dem)
-    topo_act.loc[max_y:min_y, min_x:max_x] = simulador.depth.dem
+    topo_act.loc[max_y:min_y, min_x:max_x] = topo_act.loc[max_y:min_y, min_x:max_x] + simulador.depth.dem
 
     # Guardamos la topografia
     ruta_nueva_topo = f'{RUTA_FOLDER_OUTPUT}topografia_{dia + 1}_{sector}.asc'
