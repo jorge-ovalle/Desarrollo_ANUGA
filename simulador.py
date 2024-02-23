@@ -384,15 +384,18 @@ class AnugaSW(Simulador):
                 insertion_idx = self.idx_p1 + 1
             
             self.region.insert(insertion_idx, punto)
+
             
-        for tipo in bordes_a_extender:
-            if tipo in dejar_de_traquear:
-                del self.bordes_a_traquear[tipo]
+        for tipo in dejar_de_traquear:
+            del self.bordes_a_traquear[tipo]
+        
+        # Actualizamos el indice de los bordes a tener en mente
+        for tipo in self.bordes_a_traquear:
+            if tipo == 0:
+                self.bordes_a_traquear[tipo] = self.idx_p1 - 1
             else:
-                if tipo == 0:
-                    self.bordes_a_traquear[tipo] = self.idx_p1 - 1
-                else:
-                    self.bordes_a_traquear[tipo] = self.idx_p1
+                self.bordes_a_traquear[tipo] = self.idx_p1
+        
         
 
         # Creamos nuevo dominio con la región extendida
