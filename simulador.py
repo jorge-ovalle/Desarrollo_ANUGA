@@ -155,6 +155,9 @@ class AnugaSW(Simulador):
         self.domain.set_name(self.nombre_salida_sww)
         self.dplotter = anuga.Domain_plotter(self.domain, plot_dir=self.carpeta_figuras)
 
+        # Seteamos la altura mínima a ser considerada en el esquema numérico
+        self.domain.set_minimum_storable_height(p.MIN_ALLOWED_HEIGHT)
+
         # Seteamos el tiempo de inicio
         self.domain.set_time(self.tiempo_modelo)
 
@@ -236,7 +239,9 @@ class AnugaSW(Simulador):
         Ejecuta una simulación a partir de la información de los puntos de descarga de 'info_puntos'
 
         Args:
-            info_puntos (pd.DataFrame): Información de los puntos de descarga
+            info_puntos (pd.DataFrame): Información de los puntos de descarga. Sus columnas son
+            ['id_punto', 'coordenada_x', 'coordenada_y', 'angulo_polar', 'tms', 'tasa_diaria', 'radio_canaleta']
+
             yieldstep (int): Paso de tiempo (en segundos)
             tiempo_extra (int): Tiempo extra de simulación (en segundos) después de que las
                                 canaletas se apagan
@@ -544,7 +549,7 @@ class AnugaSW(Simulador):
         xmoms_aux[wet_indices_aux] = xmoms_aux[wet_indices_aux] / areas_aux2[wet_indices_aux]
         ymoms_aux[wet_indices_aux] = ymoms_aux[wet_indices_aux] / areas_aux2[wet_indices_aux]
 
-        depth_mask = depths_aux < 1e-12
+        depth_mask = depths_aux <= p.MIN_ALLOWED_HEIGHT
         depths_aux[depth_mask] = 0
         xmoms_aux[depth_mask] = 0
         ymoms_aux[depth_mask] = 0
@@ -620,7 +625,7 @@ class AnugaSW(Simulador):
                 # area_topo.set_value(*xy, area_value)
         
         self.depth.dem = self.depth.dem / (self.depth.cellsize ** 2)
-        depth_mask = self.depth.dem < 1e-12
+        depth_mask = self.depth.dem <= p.MIN_ALLOWED_HEIGHT
         self.depth.dem[depth_mask] = 0
 
         # self.depth.dem += self.topografia.dem
