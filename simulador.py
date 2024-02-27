@@ -153,10 +153,11 @@ class AnugaSW(Simulador):
             mesh_filename=self.mesh_filename)
 
         self.domain.set_name(self.nombre_salida_sww)
-        self.dplotter = anuga.Domain_plotter(self.domain, plot_dir=self.carpeta_figuras)
+        self.dplotter = anuga.Domain_plotter(self.domain, plot_dir=self.carpeta_figuras,
+                                             min_depth=p.MIN_STORABLE_DEPTH)
 
         # Seteamos la altura mínima a ser considerada en el esquema numérico
-        self.domain.set_minimum_storable_height(p.MIN_ALLOWED_HEIGHT)
+        self.domain.set_minimum_storable_height(p.MIN_ALLOWED_DEPTH)
 
         # Seteamos el tiempo de inicio
         self.domain.set_time(self.tiempo_modelo)
@@ -549,7 +550,7 @@ class AnugaSW(Simulador):
         xmoms_aux[wet_indices_aux] = xmoms_aux[wet_indices_aux] / areas_aux2[wet_indices_aux]
         ymoms_aux[wet_indices_aux] = ymoms_aux[wet_indices_aux] / areas_aux2[wet_indices_aux]
 
-        depth_mask = depths_aux <= p.MIN_ALLOWED_HEIGHT
+        depth_mask = depths_aux <= p.MIN_ALLOWED_DEPTH
         depths_aux[depth_mask] = 0
         xmoms_aux[depth_mask] = 0
         ymoms_aux[depth_mask] = 0
@@ -625,9 +626,5 @@ class AnugaSW(Simulador):
                 # area_topo.set_value(*xy, area_value)
         
         self.depth.dem = self.depth.dem / (self.depth.cellsize ** 2)
-        depth_mask = self.depth.dem <= p.MIN_ALLOWED_HEIGHT
+        depth_mask = self.depth.dem <= p.MIN_ALLOWED_DEPTH
         self.depth.dem[depth_mask] = 0
-
-        # self.depth.dem += self.topografia.dem
-    
-
