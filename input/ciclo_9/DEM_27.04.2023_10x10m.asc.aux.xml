@@ -1,0 +1,18 @@
+<PAMDataset>
+  <Metadata>
+    <MDI key="AREA_OR_POINT">Area</MDI>
+    <MDI key="TIFFTAG_SOFTWARE">Autodesk Civil3D 2008</MDI>
+  </Metadata>
+  <PAMRasterBand band="1">
+    <UnitType>metre</UnitType>
+    <ColorInterp>Gray</ColorInterp>
+    <Metadata>
+      <MDI key="STATISTICS_APPROXIMATE">YES</MDI>
+      <MDI key="STATISTICS_MAXIMUM">3172.8212890625</MDI>
+      <MDI key="STATISTICS_MEAN">2986.5374073565</MDI>
+      <MDI key="STATISTICS_MINIMUM">2884.5185546875</MDI>
+      <MDI key="STATISTICS_STDDEV">47.767240282878</MDI>
+      <MDI key="STATISTICS_VALID_PERCENT">83.52</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>

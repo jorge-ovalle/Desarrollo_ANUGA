@@ -1,0 +1,17 @@
+<PAMDataset>
+  <Metadata>
+    <MDI key="AREA_OR_POINT">Point</MDI>
+  </Metadata>
+  <PAMRasterBand band="1">
+    <UnitType>metre</UnitType>
+    <ColorInterp>Gray</ColorInterp>
+    <Metadata>
+      <MDI key="STATISTICS_APPROXIMATE">YES</MDI>
+      <MDI key="STATISTICS_MAXIMUM">3172.0749511719</MDI>
+      <MDI key="STATISTICS_MEAN">2987.4653107458</MDI>
+      <MDI key="STATISTICS_MINIMUM">2883.6564941406</MDI>
+      <MDI key="STATISTICS_STDDEV">50.430978674497</MDI>
+      <MDI key="STATISTICS_VALID_PERCENT">85.53</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>

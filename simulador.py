@@ -362,6 +362,11 @@ class AnugaSW(Simulador):
                 extension_valida.append(True)
                 puntos_de_extension[tipo] = list(self.extension_region.loc[(n_actualizacion, tipo)].values)
 
+                ''' FOR DEBUGGING PURPOSES '''
+                print(puntos_de_extension[tipo])
+
+                ''' END DEBUGGING PURPOSES '''
+
                 # Actualizamos el contador de actualizaciones para las extensiones válidas
                 self.n_actualizacion_por_tipo[tipo] += 1
                 
